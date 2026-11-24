@@ -1,0 +1,33 @@
+@use 'variables' as *;
+@use 'mixins';
+@use 'animations';
+@use 'auth';
+@use 'dashboard';
+
+html,
+body {
+  background-color: color('bg-deep');
+  color: color('text-primary');
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #090d1e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, color('indigo'), color('violet'));
+  border-radius: 9999px;
+
+  &:hover {
+    background: #818cf8;
+  }
+}

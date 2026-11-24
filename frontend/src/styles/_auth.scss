@@ -1,0 +1,118 @@
+@use 'variables' as *;
+@use 'mixins' as *;
+
+.auth-mesh-bg {
+  position: relative;
+  overflow: hidden;
+  background-color: color('bg-deep');
+  background-image:
+    radial-gradient(rgba(148, 163, 184, 0.14) 1px, transparent 1px),
+    radial-gradient(ellipse at 20% 20%, rgba(99, 102, 241, 0.26) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 80%, rgba(16, 185, 129, 0.22) 0%, transparent 55%),
+    linear-gradient(135deg, #050816 0%, #0f1035 45%, #13113c 72%, #071b2e 100%);
+  background-size: 28px 28px, 100% 100%, 100% 100%, 240% 240%;
+  animation: auroraFlow 18s ease infinite;
+
+  &::before {
+    content: '';
+    @include floating-orb(520px, color('indigo'), color('violet'), 11s);
+    top: -150px;
+    left: -110px;
+  }
+
+  &::after {
+    content: '';
+    @include floating-orb(480px, color('emerald'), color('cyan'), 14s);
+    bottom: -150px;
+    right: -100px;
+    animation-delay: -5s;
+  }
+}
+
+.glass-panel {
+  @include obsidian-glass(28px, 0.82);
+  position: relative;
+  z-index: 2;
+  overflow: hidden;
+  border-color: rgba(129, 140, 248, 0.32) !important;
+  box-shadow: shadow('auth-panel');
+  animation: cardReveal 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+
+  // Animated Neon Aurora Ribbon on top edge
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(
+      90deg,
+      color('indigo'),
+      color('violet'),
+      color('cyan'),
+      color('emerald'),
+      color('indigo')
+    );
+    background-size: 220% 100%;
+    animation: neonRibbon 4s linear infinite;
+  }
+
+  // Radiant gradient brand title
+  h1 {
+    background: linear-gradient(135deg, #ffffff 15%, #c7d2fe 60%, #6ee7b7 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.02em;
+  }
+
+  // Pulsing Glowing Brand Emblem
+  .bg-indigo-600.h-12.w-12 {
+    background-image: linear-gradient(135deg, color('indigo'), color('violet')) !important;
+    animation: emblemPulse 3.8s ease-in-out infinite;
+    transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+
+    &:hover {
+      transform: rotate(-8deg) scale(1.1);
+    }
+  }
+
+  // Mode Toggle (Sign In / Create Account)
+  .bg-slate-100 {
+    background: rgba(9, 14, 30, 0.8) !important;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+
+    button.bg-white {
+      background: linear-gradient(135deg, color('indigo-deep'), color('violet')) !important;
+      color: #ffffff !important;
+      box-shadow: 0 6px 18px -4px rgba(99, 102, 241, 0.6);
+    }
+  }
+
+  input {
+    @include dark-input();
+  }
+
+  .otp-input {
+    letter-spacing: 0.52em;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    font-weight: 800;
+    color: #a5b4fc !important;
+    border-color: rgba(129, 140, 248, 0.5) !important;
+    box-shadow: 0 0 22px -6px rgba(99, 102, 241, 0.45);
+  }
+}
+
+button.bg-white {
+    background: rgba(30, 41, 72, 0.78) !important;
+    color: #e2e8f0 !important;
+    border-color: rgba(148, 163, 184, 0.28) !important;
+
+    &:hover {
+      background: rgba(99, 102, 241, 0.24) !important;
+      border-color: rgba(129, 140, 248, 0.5) !important;
+      color: #ffffff !important;
+    }
+  }
