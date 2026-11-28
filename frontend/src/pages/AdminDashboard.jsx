@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import api from '../api/axios';
 import CourseGrid from '../components/CourseGrid';
+import DeleteModal from '../components/DeleteModal';
 
 const emptyForm = {
   course_id: '',
@@ -39,6 +40,10 @@ export default function AdminDashboard() {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+
+  // Custom Delete Modal State
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -116,14 +121,19 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Delete this assignment?')) return;
+  const confirmDeleteAssignment = async () => {
+    if (!deleteTarget) return;
     try {
-      await api.delete(`/assignments/${id}`);
-      showToast('Assignment deleted.');
+      setDeleting(true);
+      await api.delete(`/assignments/${deleteTarget.id}`);
+      setDeleteTarget(null);
+      showToast('Assignment deleted successfully.');
       await loadData();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to delete assignment.');
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -151,7 +161,7 @@ export default function AdminDashboard() {
           </div>
           <button
             onClick={openCreate}
-            className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-indigo-500"
+            className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-indigo-500 cursor-pointer"
           >
             + New Assignment
           </button>
@@ -185,7 +195,7 @@ export default function AdminDashboard() {
         </div>
 
         {toast && (
-          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-4 py-3 text-sm font-medium text-emerald-300">
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-4 py-3 text-sm font-medium text-emerald-300 animate-fade-up">
             ✓ {toast}
           </div>
         )}
@@ -195,10 +205,10 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* ROUND 2: Courses Taught Grid */}
+        {/* Courses Taught Grid */}
         <CourseGrid role="ADMIN" />
 
-        {/* Navigation Tabs + Status Filter */}
+        {/* Navigation Tabs + Status Filter Pills with Rotation */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-2">
             {[
@@ -210,7 +220,7 @@ export default function AdminDashboard() {
               <button
                 key={t.id}
                 onClick={() => setActiveTab(t.id)}
-                className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                className={`rounded-xl px-4 py-2 text-sm font-semibold transition cursor-pointer ${
                   activeTab === t.id
                     ? 'bg-indigo-600 text-white shadow-md'
                     : 'border border-slate-800 bg-[#0f172a] text-slate-300 hover:bg-slate-800'
@@ -223,19 +233,25 @@ export default function AdminDashboard() {
 
           {(activeTab === 'groups' || activeTab === 'students') && (
             <div className="flex items-center gap-1 rounded-xl border border-slate-800 bg-[#0f172a] p-1">
-              {['ALL', 'CONFIRMED', 'PENDING'].map((st) => (
-                <button
-                  key={st}
-                  onClick={() => setStatusFilter(st)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
-                    statusFilter === st
-                      ? 'bg-indigo-600 text-white'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {st === 'ALL' ? 'All' : st === 'CONFIRMED' ? '✓ Confirmed' : '⏳ Pending'}
-                </button>
-              ))}
+              {['ALL', 'CONFIRMED', 'PENDING'].map((st) => {
+                const isSelected = statusFilter === st;
+                return (
+                  <button
+                    key={st}
+                    onClick={() => setStatusFilter(st)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {isSelected && loading && <span className="filter-rotate-sm" />}
+                    <span>
+                      {st === 'ALL' ? 'All' : st === 'CONFIRMED' ? '✓ Confirmed' : '⏳ Pending'}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -322,13 +338,13 @@ export default function AdminDashboard() {
                   <div className="flex gap-2">
                     <button
                       onClick={() => openEdit(a)}
-                      className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-700 cursor-pointer"
                     >
                       Edit
                     </button>
                     <button
-                      onClick={() => handleDelete(a.id)}
-                      className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-semibold text-rose-300 hover:bg-rose-500/20"
+                      onClick={() => setDeleteTarget({ id: a.id, title: a.title })}
+                      className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 cursor-pointer"
                     >
                       Delete
                     </button>
@@ -337,22 +353,29 @@ export default function AdminDashboard() {
                 <p className="mt-1.5 text-xs text-slate-400">{a.description}</p>
                 <div className="mt-4 flex justify-between text-xs text-slate-400">
                   <span>
-                    {a.confirmed_count} / {a.total_target_count} Confirmed
+                    {a.confirmed_count ?? 0} / {a.total_target_count ?? a.total_targets ?? 0} Confirmed
                   </span>
-                  <span className="font-semibold text-indigo-400">{a.completion_rate}%</span>
+                  <span className="font-semibold text-indigo-400">
+                    {a.completion_rate ?? 0}%
+                  </span>
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* Tab 3 & 4: Group-wise & Student-wise Tracking */}
+        {/* Tab 3 & 4: Group-wise & Student-wise Tracking with Rotating Loader */}
         {(activeTab === 'groups' || activeTab === 'students') && (
           <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-[#0f172a]/90 p-5 shadow-lg">
             {loading ? (
-              <div className="h-40 animate-pulse rounded-xl bg-slate-800/70" />
+              <div className="filter-loading-box">
+                <div className="filter-rotate-ring" />
+                <p className="filter-loading-text">
+                  Loading {statusFilter.toLowerCase()} submissions...
+                </p>
+              </div>
             ) : (
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left text-sm animate-fade-up">
                 <thead>
                   <tr className="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-400">
                     <th className="py-3 pr-4">{activeTab === 'groups' ? 'Group' : 'Student'}</th>
@@ -511,7 +534,7 @@ export default function AdminDashboard() {
                         type="button"
                         key={g.id}
                         onClick={() => toggleGroupId(g.id)}
-                        className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${
+                        className={`rounded-lg border px-2.5 py-1 text-xs font-semibold cursor-pointer ${
                           form.group_ids.includes(g.id)
                             ? 'border-indigo-500 bg-indigo-600 text-white'
                             : 'border-slate-700 bg-slate-800 text-slate-300'
@@ -529,21 +552,47 @@ export default function AdminDashboard() {
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-300"
+                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-300 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
               >
-                {saving ? 'Saving...' : editingId ? 'Save Changes' : 'Create Assignment'}
+                {saving ? (
+                  <>
+                    <span className="filter-rotate-sm" />
+                    Saving...
+                  </>
+                ) : editingId ? (
+                  'Save Changes'
+                ) : (
+                  'Create Assignment'
+                )}
               </button>
             </div>
           </form>
         </div>
       )}
+
+      {/* Custom Glassmorphism Delete Modal */}
+      <DeleteModal
+        isOpen={Boolean(deleteTarget)}
+        title="Delete Assignment"
+        subtitle="Permanent removal from course & submissions"
+        message={
+          <>
+            Are you sure you want to delete <strong>{deleteTarget?.title}</strong>? All related
+            submission acknowledgments for this assignment will also be removed.
+          </>
+        }
+        confirmLabel="Yes, Delete"
+        loading={deleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDeleteAssignment}
+      />
     </div>
   );
 }

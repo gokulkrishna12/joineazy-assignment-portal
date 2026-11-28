@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import api from '../api/axios';
+import DeleteModal from '../components/DeleteModal';
 
 const emptyForm = {
   title: '',
@@ -29,6 +30,9 @@ export default function AdminCoursePage() {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -97,15 +101,20 @@ export default function AdminCoursePage() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Delete this assignment?')) return;
+  const confirmDeleteAssignment = async () => {
+    if (!deleteTarget) return;
     try {
-      await api.delete(`/assignments/${id}`);
+      setDeleting(true);
+      await api.delete(`/assignments/${deleteTarget.id}`);
+      setDeleteTarget(null);
       setToast('Assignment deleted.');
       await loadData();
       setTimeout(() => setToast(''), 3000);
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to delete assignment.');
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -121,8 +130,8 @@ export default function AdminCoursePage() {
   if (loading && !course) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#080d1a] text-slate-300">
-        <span className="loading-spinner-lg" />
-        <p className="text-sm font-medium text-indigo-300">Loading course workspace...</p>
+        <div className="filter-rotate-ring" />
+        <p className="filter-loading-text">Loading course workspace...</p>
       </div>
     );
   }
@@ -139,7 +148,7 @@ export default function AdminCoursePage() {
           </Link>
           <button
             onClick={openCreate}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:bg-indigo-500"
+            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md transition hover:bg-indigo-500 cursor-pointer"
           >
             + New Course Assignment
           </button>
@@ -213,13 +222,13 @@ export default function AdminCoursePage() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => openEdit(a)}
-                    className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+                    className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-700 cursor-pointer"
                   >
                     Edit
                   </button>
                   <button
-                    onClick={() => handleDelete(a.id)}
-                    className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-semibold text-rose-300 hover:bg-rose-500/20"
+                    onClick={() => setDeleteTarget({ id: a.id, title: a.title })}
+                    className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 cursor-pointer"
                   >
                     Delete
                   </button>
@@ -231,14 +240,14 @@ export default function AdminCoursePage() {
               <div className="mt-4">
                 <div className="flex justify-between text-xs font-medium text-slate-400">
                   <span>
-                    {a.confirmed_count} / {a.total_target_count} Acknowledged
+                    {a.confirmed_count ?? 0} / {a.total_target_count ?? a.total_targets ?? 0} Acknowledged
                   </span>
-                  <span className="text-indigo-400">{a.completion_rate}%</span>
+                  <span className="text-indigo-400">{a.completion_rate ?? 0}%</span>
                 </div>
                 <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-800">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all duration-500"
-                    style={{ width: `${a.completion_rate}%` }}
+                    style={{ width: `${a.completion_rate ?? 0}%` }}
                   />
                 </div>
               </div>
@@ -246,12 +255,13 @@ export default function AdminCoursePage() {
           ))}
         </div>
 
+        {/* Submission Status Monitoring + Rotating Filter Loader */}
         <div className="rounded-2xl border border-slate-800 bg-[#0f172a]/90 p-6 shadow-xl">
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setTrackingTab('students')}
-                className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                className={`rounded-xl px-4 py-2 text-sm font-semibold transition cursor-pointer ${
                   trackingTab === 'students'
                     ? 'bg-indigo-600 text-white'
                     : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
@@ -261,7 +271,7 @@ export default function AdminCoursePage() {
               </button>
               <button
                 onClick={() => setTrackingTab('groups')}
-                className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                className={`rounded-xl px-4 py-2 text-sm font-semibold transition cursor-pointer ${
                   trackingTab === 'groups'
                     ? 'bg-indigo-600 text-white'
                     : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
@@ -272,82 +282,102 @@ export default function AdminCoursePage() {
             </div>
 
             <div className="flex items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900 p-1">
-              {['ALL', 'CONFIRMED', 'PENDING'].map((st) => (
-                <button
-                  key={st}
-                  onClick={() => setStatusFilter(st)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
-                    statusFilter === st
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {st === 'ALL' ? 'All Statuses' : st === 'CONFIRMED' ? '✓ Acknowledged' : '⏳ Pending'}
-                </button>
-              ))}
+              {['ALL', 'CONFIRMED', 'PENDING'].map((st) => {
+                const isSelected = statusFilter === st;
+                return (
+                  <button
+                    key={st}
+                    onClick={() => setStatusFilter(st)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {isSelected && loading && <span className="filter-rotate-sm" />}
+                    <span>
+                      {st === 'ALL'
+                        ? 'All Statuses'
+                        : st === 'CONFIRMED'
+                        ? '✓ Acknowledged'
+                        : '⏳ Pending'}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-400">
-                  <th className="py-3 pr-4">{trackingTab === 'students' ? 'Student' : 'Group'}</th>
-                  <th className="py-3 pr-4">Progress</th>
-                  <th className="py-3">Filtered Submissions ({statusFilter})</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/80">
-                {(trackingTab === 'students'
-                  ? analytics?.student_tracking || []
-                  : analytics?.group_tracking || []
-                ).map((row) => (
-                  <tr key={row.id} className="align-top">
-                    <td className="py-3.5 pr-4">
-                      <div className="font-semibold text-white">{row.name}</div>
-                      <div className="text-xs text-slate-400">
-                        {trackingTab === 'students'
-                          ? row.student_id || row.email
-                          : `${row.member_count} members`}
-                      </div>
-                    </td>
-                    <td className="py-3.5 pr-4">
-                      <span className="font-semibold text-indigo-400">{row.completion_rate}%</span>
-                      <div className="text-xs text-slate-400">
-                        {row.confirmed_count}/{row.assigned_count} done
-                      </div>
-                    </td>
-                    <td className="py-3.5">
-                      {row.assignment_statuses.length === 0 ? (
-                        <span className="text-xs italic text-slate-500">
-                          No {statusFilter.toLowerCase()} assignments
-                        </span>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {row.assignment_statuses.map((st) => (
-                            <span
-                              key={st.assignment_id}
-                              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold ${
-                                st.status === 'CONFIRMED'
-                                  ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                                  : 'border border-amber-500/30 bg-amber-500/10 text-amber-300'
-                              }`}
-                            >
-                              {st.status === 'CONFIRMED' ? '✓' : '⏳'} {st.assignment_title}
-                              {st.group_name ? ` (${st.group_name})` : ''}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </td>
+            {loading ? (
+              <div className="filter-loading-box">
+                <div className="filter-rotate-ring" />
+                <p className="filter-loading-text">
+                  Filtering {statusFilter.toLowerCase()} submissions...
+                </p>
+              </div>
+            ) : (
+              <table className="w-full text-left text-sm animate-fade-up">
+                <thead>
+                  <tr className="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-400">
+                    <th className="py-3 pr-4">{trackingTab === 'students' ? 'Student' : 'Group'}</th>
+                    <th className="py-3 pr-4">Progress</th>
+                    <th className="py-3">Filtered Submissions ({statusFilter})</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-800/80">
+                  {(trackingTab === 'students'
+                    ? analytics?.student_tracking || []
+                    : analytics?.group_tracking || []
+                  ).map((row) => (
+                    <tr key={row.id} className="align-top">
+                      <td className="py-3.5 pr-4">
+                        <div className="font-semibold text-white">{row.name}</div>
+                        <div className="text-xs text-slate-400">
+                          {trackingTab === 'students'
+                            ? row.student_id || row.email
+                            : `${row.member_count} members`}
+                        </div>
+                      </td>
+                      <td className="py-3.5 pr-4">
+                        <span className="font-semibold text-indigo-400">{row.completion_rate}%</span>
+                        <div className="text-xs text-slate-400">
+                          {row.confirmed_count}/{row.assigned_count} done
+                        </div>
+                      </td>
+                      <td className="py-3.5">
+                        {row.assignment_statuses.length === 0 ? (
+                          <span className="text-xs italic text-slate-500">
+                            No {statusFilter.toLowerCase()} assignments
+                          </span>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {row.assignment_statuses.map((st) => (
+                              <span
+                                key={st.assignment_id}
+                                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold ${
+                                  st.status === 'CONFIRMED'
+                                    ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                                    : 'border border-amber-500/30 bg-amber-500/10 text-amber-300'
+                                }`}
+                              >
+                                {st.status === 'CONFIRMED' ? '✓' : '⏳'} {st.assignment_title}
+                                {st.group_name ? ` (${st.group_name})` : ''}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>
 
+      {/* Create / Edit Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
           <form
@@ -431,7 +461,7 @@ export default function AdminCoursePage() {
                         type="button"
                         key={g.id}
                         onClick={() => toggleGroupId(g.id)}
-                        className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${
+                        className={`rounded-lg border px-2.5 py-1 text-xs font-semibold cursor-pointer ${
                           form.group_ids.includes(g.id)
                             ? 'border-indigo-500 bg-indigo-600 text-white'
                             : 'border-slate-700 bg-slate-800 text-slate-300'
@@ -449,18 +479,18 @@ export default function AdminCoursePage() {
               <button
                 type="button"
                 onClick={() => setShowForm(false)}
-                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700"
+                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
               >
                 {saving ? (
                   <>
-                    <span className="loading-spinner" />
+                    <span className="filter-rotate-sm" />
                     Saving...
                   </>
                 ) : editingId ? (
@@ -473,6 +503,23 @@ export default function AdminCoursePage() {
           </form>
         </div>
       )}
+
+      {/* Custom Glassmorphism Delete Modal */}
+      <DeleteModal
+        isOpen={Boolean(deleteTarget)}
+        title="Delete Course Assignment"
+        subtitle="Permanent removal from this course"
+        message={
+          <>
+            Are you sure you want to delete <strong>{deleteTarget?.title}</strong>? This action
+            cannot be undone.
+          </>
+        }
+        confirmLabel="Yes, Delete"
+        loading={deleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDeleteAssignment}
+      />
     </div>
   );
 }

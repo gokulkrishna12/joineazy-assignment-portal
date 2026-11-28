@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 import CourseGrid from '../components/CourseGrid';
+import DeleteModal from '../components/DeleteModal';
 
 export default function StudentDashboard() {
   const { user } = useAuth();
@@ -17,6 +18,10 @@ export default function StudentDashboard() {
   const [newGroupName, setNewGroupName] = useState('');
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [memberInputs, setMemberInputs] = useState({});
+
+  // Custom Remove Member Modal state
+  const [removeTarget, setRemoveTarget] = useState(null);
+  const [removing, setRemoving] = useState(false);
 
   // 2-step confirmation modal state
   const [modalAssignment, setModalAssignment] = useState(null);
@@ -83,15 +88,20 @@ export default function StudentDashboard() {
     }
   };
 
-  const handleRemoveMember = async (groupId, userId) => {
-    if (!window.confirm('Remove this member from the group?')) return;
+  const confirmRemoveMember = async () => {
+    if (!removeTarget) return;
     try {
+      setRemoving(true);
       setError('');
-      await api.delete(`/groups/${groupId}/members/${userId}`);
-      showToast('Member removed from group.');
+      await api.delete(`/groups/${removeTarget.groupId}/members/${removeTarget.userId}`);
+      setRemoveTarget(null);
+      showToast(`${removeTarget.memberName} removed from ${removeTarget.groupName}.`);
       await loadDashboard();
     } catch (err) {
       setError(err.response?.data?.message || 'Could not remove member.');
+      setRemoveTarget(null);
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -191,7 +201,7 @@ export default function StudentDashboard() {
           </div>
         )}
 
-        {/* ROUND 2: Course-Centric Cards Grid */}
+        {/* Course-Centric Cards Grid */}
         <CourseGrid role="STUDENT" />
 
         {/* Main 2-Column Workspace: All Assignments + My Groups */}
@@ -206,9 +216,9 @@ export default function StudentDashboard() {
             </div>
 
             {loading ? (
-              <div className="space-y-4">
-                <div className="h-40 animate-pulse rounded-2xl bg-slate-800/70" />
-                <div className="h-40 animate-pulse rounded-2xl bg-slate-800/70" />
+              <div className="filter-loading-box">
+                <div className="filter-rotate-ring" />
+                <p className="filter-loading-text">Loading assignments...</p>
               </div>
             ) : assignments.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 p-10 text-center text-sm text-slate-400">
@@ -240,8 +250,8 @@ export default function StudentDashboard() {
                           <span
                             className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
                               isGroup
-                                ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
-                                : 'bg-sky-500/15 text-sky-300 border border-sky-500/30'
+                                ? 'border border-purple-500/30 bg-purple-500/15 text-purple-300'
+                                : 'border border-sky-500/30 bg-sky-500/15 text-sky-300'
                             }`}
                           >
                             {isGroup ? 'Group' : 'Individual'}
@@ -294,7 +304,7 @@ export default function StudentDashboard() {
                         {!a.is_submitted && a.can_acknowledge && (
                           <button
                             onClick={() => openConfirmModal(a)}
-                            className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500"
+                            className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500 cursor-pointer"
                           >
                             {isGroup ? 'Acknowledge as Leader' : 'Acknowledge Submission'}
                           </button>
@@ -323,7 +333,6 @@ export default function StudentDashboard() {
               </span>
             </div>
 
-            {/* Create New Group */}
             <form
               onSubmit={handleCreateGroup}
               className="rounded-2xl border border-slate-800 bg-[#0f172a]/90 p-4 shadow-lg"
@@ -342,14 +351,13 @@ export default function StudentDashboard() {
                 <button
                   type="submit"
                   disabled={creatingGroup}
-                  className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+                  className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
                 >
-                  + Create
+                  {creatingGroup ? <span className="filter-rotate-sm" /> : '+ Create'}
                 </button>
               </div>
             </form>
 
-            {/* Group List */}
             {groups.map((g) => {
               const isLeader = g.leader_id === user?.id || g.created_by === user?.id;
               return (
@@ -378,9 +386,7 @@ export default function StudentDashboard() {
                         <div>
                           <div className="text-xs font-semibold text-white">
                             {m.name}{' '}
-                            {m.is_leader && (
-                              <span className="text-amber-400">(Leader)</span>
-                            )}
+                            {m.is_leader && <span className="text-amber-400">(Leader)</span>}
                           </div>
                           <div className="text-[11px] text-slate-400">
                             {m.email} {m.student_id ? `• ${m.student_id}` : ''}
@@ -389,8 +395,16 @@ export default function StudentDashboard() {
 
                         {!m.is_leader && (isLeader || m.id === user?.id) && (
                           <button
-                            onClick={() => handleRemoveMember(g.id, m.id)}
-                            className="rounded-lg p-1.5 text-xs text-slate-400 hover:bg-rose-500/15 hover:text-rose-400"
+                            type="button"
+                            onClick={() =>
+                              setRemoveTarget({
+                                groupId: g.id,
+                                userId: m.id,
+                                memberName: m.name,
+                                groupName: g.name,
+                              })
+                            }
+                            className="member-remove-btn"
                             title="Remove member"
                           >
                             🗑
@@ -400,7 +414,6 @@ export default function StudentDashboard() {
                     ))}
                   </div>
 
-                  {/* Add Member Form */}
                   <form
                     onSubmit={(e) => handleAddMember(e, g.id)}
                     className="mt-3 flex gap-2"
@@ -416,7 +429,7 @@ export default function StudentDashboard() {
                     />
                     <button
                       type="submit"
-                      className="shrink-0 rounded-xl border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+                      className="shrink-0 rounded-xl border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700 cursor-pointer"
                     >
                       + Add
                     </button>
@@ -469,14 +482,14 @@ export default function StudentDashboard() {
             <div className="mt-5 flex justify-end gap-2">
               <button
                 onClick={() => setModalAssignment(null)}
-                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-300"
+                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-300 cursor-pointer"
               >
                 Cancel
               </button>
               {confirmStep === 1 ? (
                 <button
                   onClick={() => setConfirmStep(2)}
-                  className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+                  className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 cursor-pointer"
                 >
                   Yes, Uploaded →
                 </button>
@@ -484,15 +497,39 @@ export default function StudentDashboard() {
                 <button
                   onClick={handleConfirmSubmission}
                   disabled={submitting}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 cursor-pointer"
                 >
-                  {submitting ? 'Saving...' : 'Confirm ✓'}
+                  {submitting ? (
+                    <>
+                      <span className="filter-rotate-sm" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Confirm ✓'
+                  )}
                 </button>
               )}
             </div>
           </div>
         </div>
       )}
+
+      {/* Custom Glassmorphism Remove Member Modal */}
+      <DeleteModal
+        isOpen={Boolean(removeTarget)}
+        title="Remove Group Member"
+        subtitle={`From ${removeTarget?.groupName || 'Group'}`}
+        message={
+          <>
+            Are you sure you want to remove <strong>{removeTarget?.memberName}</strong> from{' '}
+            <strong>{removeTarget?.groupName}</strong>?
+          </>
+        }
+        confirmLabel="Yes, Remove"
+        loading={removing}
+        onCancel={() => setRemoveTarget(null)}
+        onConfirm={confirmRemoveMember}
+      />
     </div>
   );
 }
