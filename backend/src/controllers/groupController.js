@@ -12,9 +12,9 @@ const createGroup = async (req, res) => {
     await client.query('BEGIN');
 
     const groupResult = await client.query(
-      `INSERT INTO groups (name, created_by)
-       VALUES ($1, $2)
-       RETURNING id, name, created_by, created_at`,
+      `INSERT INTO groups (name, created_by, leader_id)
+       VALUES ($1, $2, $2)
+       RETURNING id, name, created_by, leader_id, created_at`,
       [name.trim(), req.user.id]
     );
     const group = groupResult.rows[0];
