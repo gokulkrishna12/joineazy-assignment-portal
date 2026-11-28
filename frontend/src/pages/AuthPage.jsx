@@ -72,6 +72,7 @@ export default function AuthPage() {
     password: '',
     role: 'STUDENT',
     student_id: '',
+    professor_id: '',
     otp: '',
     newPassword: '',
   });
@@ -131,6 +132,11 @@ export default function AuthPage() {
     setError('');
     setSuccess('');
 
+    if (form.role === 'ADMIN' && !form.professor_id.trim()) {
+      setError('A valid Professor / Faculty Access ID (e.g. PROF2026) is required.');
+      return;
+    }
+
     if (!PASSWORD_REGEX.test(form.password)) {
       setError(
         'Password must be 8+ chars with uppercase, lowercase, number, and special character.'
@@ -150,7 +156,8 @@ export default function AuthPage() {
           email: form.email,
           password: form.password,
           role: form.role,
-          student_id: form.student_id,
+          student_id: form.role === 'STUDENT' ? form.student_id.trim() : undefined,
+          professor_id: form.role === 'ADMIN' ? form.professor_id.trim().toUpperCase() : undefined,
           otp: form.otp.trim(),
         });
         setPendingRedirect(true);
@@ -397,7 +404,7 @@ export default function AuthPage() {
           </form>
         )}
 
-        {/* REGISTER WITH GMAIL OTP */}
+        {/* REGISTER WITH GMAIL OTP + PROFESSOR ACCESS ID */}
         {mode === 'register' && (
           <form onSubmit={handleRegister} className="space-y-3.5">
             <div>
@@ -461,6 +468,27 @@ export default function AuthPage() {
                   placeholder="e.g. STU105"
                   className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm uppercase outline-none focus:border-indigo-500 disabled:bg-slate-50"
                 />
+              </div>
+            )}
+
+            {form.role === 'ADMIN' && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Professor / Faculty Access ID *
+                </label>
+                <input
+                  type="text"
+                  name="professor_id"
+                  required
+                  disabled={otpSent}
+                  value={form.professor_id}
+                  onChange={handleChange}
+                  placeholder="Enter Faculty ID (e.g. PROF2026)"
+                  className="w-full rounded-xl border border-indigo-300 bg-white px-3.5 py-2 text-sm uppercase outline-none focus:border-indigo-500 disabled:bg-slate-50"
+                />
+                <p className="mt-1 text-[11px] font-medium text-indigo-600">
+                  Verified institutional Faculty ID required for Professor registration.
+                </p>
               </div>
             )}
 

@@ -16,6 +16,15 @@ const signToken = (user) =>
 
 const generateOtp = () => crypto.randomInt(100000, 1000000).toString();
 
+const isValidProfessorId = (professorId) => {
+  if (!professorId || typeof professorId !== 'string') return false;
+  const validCodes = (process.env.PROFESSOR_ACCESS_CODES || 'PROF2026,FAC101,FAC102')
+    .split(',')
+    .map((c) => c.trim().toUpperCase())
+    .filter(Boolean);
+  return validCodes.includes(professorId.trim().toUpperCase());
+};
+
 // 1. POST /api/auth/send-register-otp
 const sendRegisterOtp = async (req, res) => {
   try {
@@ -53,10 +62,18 @@ const sendRegisterOtp = async (req, res) => {
   }
 };
 
-// 2. POST /api/auth/register (Verifies OTP, then creates account)
+// 2. POST /api/auth/register (Verifies Faculty ID for Professors + OTP, then creates account)
 const register = async (req, res) => {
   try {
-    const { name, email, password, role = 'STUDENT', student_id, otp } = req.body;
+    const {
+      name,
+      email,
+      password,
+      role = 'STUDENT',
+      student_id,
+      professor_id,
+      otp,
+    } = req.body;
 
     if (!name || !email || !password || !otp) {
       return res.status(400).json({ message: 'Name, email, password, and 6-digit OTP are required.' });
@@ -65,6 +82,14 @@ const register = async (req, res) => {
     const normalizedRole = role.toUpperCase();
     if (!['STUDENT', 'ADMIN'].includes(normalizedRole)) {
       return res.status(400).json({ message: 'Role must be STUDENT or ADMIN.' });
+    }
+
+    // Strict Faculty / Professor Access ID verification
+    if (normalizedRole === 'ADMIN' && !isValidProfessorId(professor_id)) {
+      return res.status(403).json({
+        message:
+          'Invalid Professor Access ID. A valid Faculty ID (e.g. PROF2026) is required to register as Professor.',
+      });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -232,7 +257,7 @@ const resetPassword = async (req, res) => {
 // 6. POST /api/auth/google (Google OAuth Sign-In / Sign-Up)
 const googleAuth = async (req, res) => {
   try {
-    const { credential, role = 'STUDENT' } = req.body;
+    const { credential, role = 'STUDENT', professor_id } = req.body;
     if (!credential) {
       return res.status(400).json({ message: 'Google credential token is required.' });
     }
@@ -261,6 +286,15 @@ const googleAuth = async (req, res) => {
       const normalizedRole = ['STUDENT', 'ADMIN'].includes(role.toUpperCase())
         ? role.toUpperCase()
         : 'STUDENT';
+
+      // Prevent unauthorized Professor sign-ups via Google OAuth
+      if (normalizedRole === 'ADMIN' && !isValidProfessorId(professor_id)) {
+        return res.status(403).json({
+          message:
+            'New Professor accounts require a valid Faculty Access ID. Please register via email with your Professor ID.',
+        });
+      }
+
       const autoStudentId =
         normalizedRole === 'STUDENT' ? `STU${crypto.randomInt(1000, 9999)}` : null;
       const randomPasswordHash = await bcrypt.hash(crypto.randomBytes(24).toString('hex'), 10);

@@ -1,43 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  BarChart3,
-  ClipboardList,
-  Users,
-  GraduationCap,
-  Plus,
-  Pencil,
-  Trash2,
-  ExternalLink,
-  CheckCircle2,
-  Clock,
-  X,
-  AlertCircle,
-} from 'lucide-react';
-import {
-  ResponsiveContainer,
-  BarChart,
   Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
 } from 'recharts';
 import api from '../api/axios';
-import ConfirmModal from '../components/ConfirmModal';
-
-const formatForDatetimeInput = (isoString) => {
-  if (!isoString) return '';
-  const d = new Date(isoString);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-    d.getHours()
-  )}:${pad(d.getMinutes())}`;
-};
+import CourseGrid from '../components/CourseGrid';
 
 const emptyForm = {
+  course_id: '',
   title: '',
   description: '',
+  submission_type: 'GROUP',
   due_date: '',
   onedrive_link: '',
   assign_to_all: true,
@@ -45,748 +24,526 @@ const emptyForm = {
 };
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState('analytics');
   const [analytics, setAnalytics] = useState(null);
   const [assignments, setAssignments] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [activeTab, setActiveTab] = useState('analytics');
+  const [statusFilter, setStatusFilter] = useState('ALL');
   const [loading, setLoading] = useState(true);
-  const [feedback, setFeedback] = useState({ type: '', text: '' });
+  const [error, setError] = useState('');
+  const [toast, setToast] = useState('');
 
-  // Create / Edit Assignment Modal
-  const [modalOpen, setModalOpen] = useState(false);
+  // Assignment Create/Edit Modal
+  const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
 
-  // Custom SCSS Confirm Delete Modal
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deleting, setDeleting] = useState(false);
-
-  const showFeedback = (type, text) => {
-    setFeedback({ type, text });
-    setTimeout(() => setFeedback({ type: '', text: '' }), 4000);
-  };
-
-  const fetchAll = async () => {
+  const loadData = useCallback(async () => {
     try {
-      const [analyticsRes, assignRes, groupsRes] = await Promise.all([
-        api.get('/submissions/analytics'),
+      setLoading(true);
+      setError('');
+      const [analyticsRes, assignRes, groupsRes, coursesRes] = await Promise.all([
+        api.get(`/submissions/analytics?status=${statusFilter}`),
         api.get('/assignments'),
         api.get('/groups'),
+        api.get('/courses'),
       ]);
       setAnalytics(analyticsRes.data);
       setAssignments(assignRes.data.assignments || []);
       setGroups(groupsRes.data.groups || []);
+      setCourses(coursesRes.data.courses || []);
     } catch (err) {
-      showFeedback('error', err.response?.data?.message || 'Failed to load admin data.');
+      setError(err.response?.data?.message || 'Failed to load professor dashboard.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter]);
 
   useEffect(() => {
-    fetchAll();
-  }, []);
+    loadData();
+  }, [loadData]);
 
-  const openCreateModal = () => {
-    setEditingId(null);
-    setForm(emptyForm);
-    setModalOpen(true);
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 3500);
   };
 
-  const openEditModal = (a) => {
+  const openCreate = () => {
+    setEditingId(null);
+    setForm({ ...emptyForm, course_id: courses[0]?.id ? String(courses[0].id) : '' });
+    setShowModal(true);
+  };
+
+  const openEdit = (a) => {
     setEditingId(a.id);
     setForm({
-      title: a.title,
+      course_id: a.course_id ? String(a.course_id) : '',
+      title: a.title || '',
       description: a.description || '',
-      due_date: formatForDatetimeInput(a.due_date),
-      onedrive_link: a.onedrive_link,
-      assign_to_all: Boolean(a.assign_to_all),
+      submission_type: a.submission_type || 'GROUP',
+      due_date: a.due_date ? new Date(a.due_date).toISOString().slice(0, 16) : '',
+      onedrive_link: a.onedrive_link || '',
+      assign_to_all: a.assign_to_all !== false,
       group_ids: a.target_group_ids || [],
     });
-    setModalOpen(true);
+    setShowModal(true);
   };
 
-  const toggleGroupSelection = (gid) => {
-    setForm((prev) => {
-      const exists = prev.group_ids.includes(gid);
-      return {
-        ...prev,
-        group_ids: exists
-          ? prev.group_ids.filter((id) => id !== gid)
-          : [...prev.group_ids, gid],
-      };
-    });
-  };
-
-  const handleSaveAssignment = async (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
-    if (!form.assign_to_all && form.group_ids.length === 0) {
-      showFeedback('error', 'Select at least one group or switch to All Students.');
-      return;
-    }
-
-    setSaving(true);
     try {
+      setSaving(true);
+      setError('');
       const payload = {
         ...form,
-        due_date: new Date(form.due_date).toISOString(),
+        course_id: form.course_id ? Number(form.course_id) : undefined,
       };
-
       if (editingId) {
         await api.put(`/assignments/${editingId}`, payload);
-        showFeedback('success', 'Assignment updated successfully.');
+        showToast('Assignment updated!');
       } else {
         await api.post('/assignments', payload);
-        showFeedback('success', 'Assignment published successfully.');
+        showToast('Assignment created!');
       }
-
-      setModalOpen(false);
-      await fetchAll();
+      setShowModal(false);
+      await loadData();
     } catch (err) {
-      showFeedback('error', err.response?.data?.message || 'Failed to save assignment.');
+      setError(err.response?.data?.message || 'Failed to save assignment.');
     } finally {
       setSaving(false);
     }
   };
 
-  const executeDeleteAssignment = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this assignment?')) return;
     try {
-      await api.delete(`/assignments/${deleteTarget.id}`);
-      const deletedTitle = deleteTarget.title;
-      setDeleteTarget(null);
-      showFeedback('success', `"${deletedTitle}" deleted.`);
-      await fetchAll();
+      await api.delete(`/assignments/${id}`);
+      showToast('Assignment deleted.');
+      await loadData();
     } catch (err) {
-      showFeedback('error', err.response?.data?.message || 'Could not delete assignment.');
-    } finally {
-      setDeleting(false);
+      setError(err.response?.data?.message || 'Failed to delete assignment.');
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="h-9 w-9 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
-      </div>
-    );
-  }
-
-  const summary = analytics?.summary || {
-    total_students: 0,
-    total_groups: 0,
-    total_assignments: 0,
-    total_confirmed_submissions: 0,
-    total_expected_submissions: 0,
-    overall_completion_rate: 0,
+  const toggleGroupId = (gid) => {
+    setForm((prev) => ({
+      ...prev,
+      group_ids: prev.group_ids.includes(gid)
+        ? prev.group_ids.filter((id) => id !== gid)
+        : [...prev.group_ids, gid],
+    }));
   };
 
-  const assignmentChartData = (analytics?.assignment_stats || []).map((a) => ({
-    name: a.title.length > 20 ? `${a.title.slice(0, 20)}...` : a.title,
-    Confirmed: a.confirmed_count,
-    Pending: a.pending_count,
-  }));
-
-  const groupChartData = (analytics?.group_tracking || []).map((g) => ({
-    name: g.name,
-    'Completion %': g.completion_rate,
-  }));
+  const summary = analytics?.summary || {};
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-      {/* Feedback Banner */}
-      {feedback.text && (
-        <div
-          className={`mb-5 flex items-center justify-between rounded-xl border px-4 py-3 text-sm font-medium ${
-            feedback.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-              : 'border-rose-200 bg-rose-50 text-rose-800'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {feedback.type === 'success' ? (
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
-            ) : (
-              <AlertCircle className="h-4 w-4 shrink-0" />
-            )}
-            <span>{feedback.text}</span>
+    <div className="min-h-screen bg-[#080d1a] px-4 py-8 text-slate-100">
+      <div className="mx-auto max-w-7xl space-y-8">
+        {/* Top Header */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-white">Professor Control Center</h1>
+            <p className="mt-1 text-sm text-slate-400">
+              Manage courses, post individual or group assignments, and monitor real-time submissions.
+            </p>
           </div>
           <button
-            onClick={() => setFeedback({ type: '', text: '' })}
-            className="opacity-70 hover:opacity-100 cursor-pointer"
+            onClick={openCreate}
+            className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-indigo-500"
           >
-            <X className="h-4 w-4" />
+            + New Assignment
           </button>
         </div>
-      )}
 
-      {/* Header + Action */}
-      <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Professor Control Center</h2>
-          <p className="text-sm text-slate-500">
-            Manage assignments, target student groups, and track real-time submission progress.
-          </p>
-        </div>
-        <button
-          onClick={openCreateModal}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 cursor-pointer"
-        >
-          <Plus className="h-4 w-4" />
-          New Assignment
-        </button>
-      </div>
-
-      {/* Summary Stat Cards */}
-      <section className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Total Students
-          </p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">{summary.total_students}</p>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Active Groups
-          </p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">{summary.total_groups}</p>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Assignments
-          </p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">{summary.total_assignments}</p>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Completion Rate
-          </p>
-          <div className="mt-2 flex items-baseline gap-2">
-            <p className="text-2xl font-bold text-emerald-600">
-              {summary.overall_completion_rate}%
-            </p>
-            <span className="text-xs text-slate-500">
-              ({summary.total_confirmed_submissions}/{summary.total_expected_submissions})
-            </span>
+        {/* Summary Stat Cards */}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="rounded-2xl border border-slate-800 border-t-2 border-t-indigo-500 bg-[#0f172a]/90 p-5 shadow-lg">
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Total Students</div>
+            <div className="mt-2 text-3xl font-bold text-white">{summary.total_students || 0}</div>
           </div>
-        </div>
-      </section>
-
-      {/* Tabs */}
-      <div className="mb-6 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
-        {[
-          { id: 'analytics', label: 'Analytics & Charts', icon: BarChart3 },
-          { id: 'assignments', label: 'Assignments', icon: ClipboardList },
-          { id: 'groups', label: 'Group-wise Tracking', icon: Users },
-          { id: 'students', label: 'Student-wise Tracking', icon: GraduationCap },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const active = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition cursor-pointer ${
-                active
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* TAB 1: ANALYTICS & CHARTS */}
-      {activeTab === 'analytics' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-4 text-base font-bold text-slate-900">
-                Submissions by Assignment
-              </h3>
-              {assignmentChartData.length === 0 ? (
-                <p className="py-12 text-center text-sm text-slate-400">
-                  No assignment data yet.
-                </p>
-              ) : (
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={assignmentChartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                      <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="Confirmed" fill="#10b981" radius={[6, 6, 0, 0]} />
-                      <Bar dataKey="Pending" fill="#f59e0b" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-4 text-base font-bold text-slate-900">
-                Group Performance (% Completed)
-              </h3>
-              {groupChartData.length === 0 ? (
-                <p className="py-12 text-center text-sm text-slate-400">No groups created yet.</p>
-              ) : (
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={groupChartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                      <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 12 }} />
-                      <Tooltip />
-                      <Bar dataKey="Completion %" fill="#6366f1" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
+          <div className="rounded-2xl border border-slate-800 border-t-2 border-t-pink-500 bg-[#0f172a]/90 p-5 shadow-lg">
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Active Groups</div>
+            <div className="mt-2 text-3xl font-bold text-white">{summary.total_groups || 0}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-800 border-t-2 border-t-sky-500 bg-[#0f172a]/90 p-5 shadow-lg">
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Assignments</div>
+            <div className="mt-2 text-3xl font-bold text-white">{summary.total_assignments || 0}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-800 border-t-2 border-t-emerald-500 bg-[#0f172a]/90 p-5 shadow-lg">
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Completion Rate</div>
+            <div className="mt-2 flex items-baseline gap-2">
+              <span className="text-3xl font-bold text-emerald-400">
+                {summary.overall_completion_rate || 0}%
+              </span>
+              <span className="text-xs text-slate-400">
+                ({summary.total_confirmed_submissions || 0}/{summary.total_expected_submissions || 0})
+              </span>
             </div>
           </div>
+        </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="mb-3 text-base font-bold text-slate-900">Recent Confirmations</h3>
-            {!analytics?.recent_confirmations?.length ? (
-              <p className="text-sm text-slate-500">No submissions confirmed yet.</p>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {analytics.recent_confirmations.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm"
-                  >
-                    <div>
-                      <span className="font-semibold text-slate-900">{item.group_name}</span>{' '}
-                      confirmed{' '}
-                      <span className="font-medium text-indigo-700">{item.assignment_title}</span>{' '}
-                      <span className="text-xs text-slate-500">
-                        (by {item.submitted_by_name})
+        {toast && (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-4 py-3 text-sm font-medium text-emerald-300">
+            ✓ {toast}
+          </div>
+        )}
+        {error && (
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/15 px-4 py-3 text-sm text-rose-300">
+            {error}
+          </div>
+        )}
+
+        {/* ROUND 2: Courses Taught Grid */}
+        <CourseGrid role="ADMIN" />
+
+        {/* Navigation Tabs + Status Filter */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: 'analytics', label: 'Analytics & Charts' },
+              { id: 'assignments', label: 'Assignments' },
+              { id: 'groups', label: 'Group-wise Tracking' },
+              { id: 'students', label: 'Student-wise Tracking' },
+            ].map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  activeTab === t.id
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'border border-slate-800 bg-[#0f172a] text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {(activeTab === 'groups' || activeTab === 'students') && (
+            <div className="flex items-center gap-1 rounded-xl border border-slate-800 bg-[#0f172a] p-1">
+              {['ALL', 'CONFIRMED', 'PENDING'].map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setStatusFilter(st)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                    statusFilter === st
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {st === 'ALL' ? 'All' : st === 'CONFIRMED' ? '✓ Confirmed' : '⏳ Pending'}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Tab 1: Recharts Analytics */}
+        {activeTab === 'analytics' && (
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div className="rounded-2xl border border-slate-800 bg-[#0f172a]/90 p-5 shadow-lg">
+              <h3 className="mb-4 text-base font-bold text-white">Submissions by Assignment</h3>
+              <div className="h-72 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={analytics?.assignment_stats || []}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis dataKey="title" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                    <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#0f172a',
+                        borderColor: '#334155',
+                        borderRadius: '12px',
+                        color: '#f8fafc',
+                      }}
+                    />
+                    <Legend />
+                    <Bar dataKey="confirmed_count" name="Confirmed" fill="#10b981" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="pending_count" name="Pending" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-800 bg-[#0f172a]/90 p-5 shadow-lg">
+              <h3 className="mb-4 text-base font-bold text-white">Group Performance (% Completed)</h3>
+              <div className="h-72 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={analytics?.group_tracking || []}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+                    <YAxis domain={[0, 100]} tick={{ fill: '#94a3b8', fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#0f172a',
+                        borderColor: '#334155',
+                        borderRadius: '12px',
+                        color: '#f8fafc',
+                      }}
+                    />
+                    <Bar dataKey="completion_rate" name="Completion %" fill="#6366f1" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 2: Assignments CRUD */}
+        {activeTab === 'assignments' && (
+          <div className="grid gap-4 md:grid-cols-2">
+            {assignments.map((a) => (
+              <div
+                key={a.id}
+                className="rounded-2xl border border-slate-800 bg-[#0f172a]/90 p-5 shadow-lg"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      {a.course_code && (
+                        <span className="rounded-md bg-indigo-500/20 px-2 py-0.5 text-xs font-bold text-indigo-300">
+                          {a.course_code}
+                        </span>
+                      )}
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                          a.submission_type === 'GROUP'
+                            ? 'bg-purple-500/15 text-purple-300'
+                            : 'bg-sky-500/15 text-sky-300'
+                        }`}
+                      >
+                        {a.submission_type}
                       </span>
                     </div>
-                    <span className="text-xs text-slate-400">
-                      {new Date(item.confirmed_at).toLocaleString([], {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      })}
-                    </span>
+                    <h3 className="mt-2 text-base font-bold text-white">{a.title}</h3>
                   </div>
-                ))}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => openEdit(a)}
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(a.id)}
+                      className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-semibold text-rose-300 hover:bg-rose-500/20"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+                <p className="mt-1.5 text-xs text-slate-400">{a.description}</p>
+                <div className="mt-4 flex justify-between text-xs text-slate-400">
+                  <span>
+                    {a.confirmed_count} / {a.total_target_count} Confirmed
+                  </span>
+                  <span className="font-semibold text-indigo-400">{a.completion_rate}%</span>
+                </div>
               </div>
+            ))}
+          </div>
+        )}
+
+        {/* Tab 3 & 4: Group-wise & Student-wise Tracking */}
+        {(activeTab === 'groups' || activeTab === 'students') && (
+          <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-[#0f172a]/90 p-5 shadow-lg">
+            {loading ? (
+              <div className="h-40 animate-pulse rounded-xl bg-slate-800/70" />
+            ) : (
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-400">
+                    <th className="py-3 pr-4">{activeTab === 'groups' ? 'Group' : 'Student'}</th>
+                    <th className="py-3 pr-4">Completion</th>
+                    <th className="py-3">Submissions ({statusFilter})</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/70">
+                  {(activeTab === 'groups'
+                    ? analytics?.group_tracking || []
+                    : analytics?.student_tracking || []
+                  ).map((row) => (
+                    <tr key={row.id} className="align-top">
+                      <td className="py-3.5 pr-4">
+                        <div className="font-semibold text-white">{row.name}</div>
+                        <div className="text-xs text-slate-400">
+                          {activeTab === 'groups'
+                            ? `${row.member_count} members`
+                            : row.student_id || row.email}
+                        </div>
+                      </td>
+                      <td className="py-3.5 pr-4">
+                        <span className="font-bold text-indigo-400">{row.completion_rate}%</span>
+                        <div className="text-xs text-slate-400">
+                          {row.confirmed_count}/{row.assigned_count} done
+                        </div>
+                      </td>
+                      <td className="py-3.5">
+                        {row.assignment_statuses.length === 0 ? (
+                          <span className="text-xs italic text-slate-500">
+                            No {statusFilter.toLowerCase()} items
+                          </span>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {row.assignment_statuses.map((st) => (
+                              <span
+                                key={st.assignment_id}
+                                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold ${
+                                  st.status === 'CONFIRMED'
+                                    ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                                    : 'border border-amber-500/30 bg-amber-500/10 text-amber-300'
+                                }`}
+                              >
+                                {st.status === 'CONFIRMED' ? '✓' : '⏳'} {st.assignment_title}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
-        </div>
-      )}
-
-      {/* TAB 2: MANAGE ASSIGNMENTS */}
-      {activeTab === 'assignments' && (
-        <div className="space-y-4">
-          {assignments.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
-              No assignments yet. Click <strong>New Assignment</strong> to post your first one.
-            </div>
-          ) : (
-            assignments.map((a) => {
-              const pct =
-                a.total_target_groups > 0
-                  ? Math.round((a.confirmed_count / a.total_target_groups) * 100)
-                  : 0;
-              return (
-                <div
-                  key={a.id}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="max-w-2xl">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-base font-bold text-slate-900">{a.title}</h3>
-                        <span
-                          className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                            a.assign_to_all
-                              ? 'bg-sky-50 text-sky-700'
-                              : 'bg-purple-50 text-purple-700'
-                          }`}
-                        >
-                          {a.assign_to_all
-                            ? 'All Students'
-                            : `Groups: ${(a.target_groups || []).map((g) => g.name).join(', ')}`}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-sm text-slate-600">{a.description}</p>
-                      <div className="mt-2.5 flex flex-wrap items-center gap-4 text-xs text-slate-500">
-                        <span>
-                          Due:{' '}
-                          <strong className="text-slate-700">
-                            {new Date(a.due_date).toLocaleString([], {
-                              dateStyle: 'medium',
-                              timeStyle: 'short',
-                            })}
-                          </strong>
-                        </span>
-                        <a
-                          href={a.onedrive_link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:underline"
-                        >
-                          OneDrive Folder <ExternalLink className="h-3 w-3" />
-                        </a>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => openEditModal(a)}
-                        className="inline-flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
-                      >
-                        <Pencil className="h-3.5 w-3.5" /> Edit
-                      </button>
-                      <button
-                        onClick={() => setDeleteTarget(a)}
-                        className="inline-flex items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 cursor-pointer"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" /> Delete
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="mt-4">
-                    <div className="mb-1 flex justify-between text-xs font-medium text-slate-600">
-                      <span>
-                        {a.confirmed_count} / {a.total_target_groups} target groups confirmed
-                      </span>
-                      <span>{pct}%</span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className="h-full rounded-full bg-indigo-600 transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
-
-      {/* TAB 3: GROUP-WISE TRACKING */}
-      {activeTab === 'groups' && (
-        <div className="space-y-4">
-          {!analytics?.group_tracking?.length ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
-              No student groups created yet.
-            </div>
-          ) : (
-            analytics.group_tracking.map((g) => (
-              <div
-                key={g.id}
-                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900">{g.name}</h3>
-                    <p className="text-xs text-slate-500">
-                      Members:{' '}
-                      {(g.members || [])
-                        .map((m) => `${m.name}${m.student_id ? ` (${m.student_id})` : ''}`)
-                        .join(', ')}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-32">
-                      <div className="mb-1 flex justify-between text-[11px] font-semibold text-slate-600">
-                        <span>
-                          {g.confirmed_count}/{g.assigned_count}
-                        </span>
-                        <span>{g.completion_rate}%</span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                        <div
-                          className="h-full rounded-full bg-emerald-500"
-                          style={{ width: `${g.completion_rate}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {(g.assignment_statuses || []).map((st) => (
-                    <div
-                      key={st.assignment_id}
-                      className={`flex items-center justify-between rounded-xl border px-3 py-2 text-xs ${
-                        st.status === 'CONFIRMED'
-                          ? 'border-emerald-200 bg-emerald-50/70 text-emerald-900'
-                          : 'border-slate-200 bg-slate-50 text-slate-700'
-                      }`}
-                    >
-                      <div className="min-w-0 pr-2">
-                        <p className="truncate font-semibold">{st.assignment_title}</p>
-                        {st.submitted_by_name && (
-                          <p className="text-[11px] text-emerald-700">
-                            By {st.submitted_by_name}
-                          </p>
-                        )}
-                      </div>
-                      {st.status === 'CONFIRMED' ? (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                          <CheckCircle2 className="h-3 w-3" /> Done
-                        </span>
-                      ) : (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-                          <Clock className="h-3 w-3" /> Pending
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* TAB 4: STUDENT-WISE TRACKING */}
-      {activeTab === 'students' && (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">Student</th>
-                  <th className="px-4 py-3">Groups</th>
-                  <th className="px-4 py-3">Completion</th>
-                  <th className="px-4 py-3">Assignment Statuses</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {(analytics?.student_tracking || []).map((st) => (
-                  <tr key={st.id} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-slate-900">{st.name}</p>
-                      <p className="text-xs text-slate-500">
-                        {st.email} {st.student_id ? `• ${st.student_id}` : ''}
-                      </p>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-700">
-                      {(st.groups || []).length > 0 ? (
-                        st.groups.map((g) => (
-                          <span
-                            key={g.id}
-                            className="mr-1 inline-block rounded-md bg-indigo-50 px-2 py-0.5 font-medium text-indigo-700"
-                          >
-                            {g.name}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-slate-400">No group</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 w-20 overflow-hidden rounded-full bg-slate-100">
-                          <div
-                            className="h-full rounded-full bg-emerald-500"
-                            style={{ width: `${st.completion_rate}%` }}
-                          />
-                        </div>
-                        <span className="text-xs font-semibold text-slate-700">
-                          {st.confirmed_count}/{st.assigned_count} ({st.completion_rate}%)
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        {(st.assignment_statuses || []).map((as) => (
-                          <span
-                            key={as.assignment_id}
-                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                              as.status === 'CONFIRMED'
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'bg-amber-100 text-amber-700'
-                            }`}
-                          >
-                            {as.assignment_title}: {as.status === 'CONFIRMED' ? '✓' : 'Pending'}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Create / Edit Assignment Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">
-                {editingId ? 'Edit Assignment' : 'Create New Assignment'}
-              </h3>
-              <button
-                onClick={() => setModalOpen(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={handleSave}
+            className="w-full max-w-lg space-y-4 rounded-2xl border border-slate-700 bg-[#0f172a] p-6 shadow-2xl animate-fade-up"
+          >
+            <h3 className="text-lg font-bold text-white">
+              {editingId ? 'Edit Assignment' : 'Create Assignment'}
+            </h3>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400">Course</label>
+                <select
+                  value={form.course_id}
+                  onChange={(e) => setForm({ ...form, course_id: e.target.value })}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                >
+                  {courses.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.code} — {c.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-400">Submission Type</label>
+                <select
+                  value={form.submission_type}
+                  onChange={(e) => setForm({ ...form, submission_type: e.target.value })}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                >
+                  <option value="GROUP">Group (Leader Acknowledges)</option>
+                  <option value="INDIVIDUAL">Individual</option>
+                </select>
+              </div>
             </div>
 
-            <form onSubmit={handleSaveAssignment} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-400">Title *</label>
+              <input
+                required
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-400">Description</label>
+              <textarea
+                rows={2}
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Title</label>
+                <label className="block text-xs font-semibold text-slate-400">Due Date *</label>
                 <input
-                  type="text"
                   required
-                  value={form.title}
-                  onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-                  placeholder="e.g. Microservices Architecture Lab"
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm outline-none focus:border-indigo-500"
+                  type="datetime-local"
+                  value={form.due_date}
+                  onChange={(e) => setForm({ ...form, due_date: e.target.value })}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
                 />
               </div>
-
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Description
-                </label>
-                <textarea
-                  rows={3}
-                  value={form.description}
-                  onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
-                  placeholder="Instructions and deliverables..."
-                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm outline-none focus:border-indigo-500"
+                <label className="block text-xs font-semibold text-slate-400">OneDrive Link *</label>
+                <input
+                  required
+                  type="url"
+                  value={form.onedrive_link}
+                  onChange={(e) => setForm({ ...form, onedrive_link: e.target.value })}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
                 />
               </div>
+            </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Due Date</label>
-                  <input
-                    type="datetime-local"
-                    required
-                    value={form.due_date}
-                    onChange={(e) => setForm((p) => ({ ...p, due_date: e.target.value }))}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">
-                    OneDrive Link
-                  </label>
-                  <input
-                    type="url"
-                    required
-                    value={form.onedrive_link}
-                    onChange={(e) => setForm((p) => ({ ...p, onedrive_link: e.target.value }))}
-                    placeholder="https://onedrive.live.com/..."
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
+            {form.submission_type === 'GROUP' && (
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Assign To
+                <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={form.assign_to_all}
+                    onChange={(e) => setForm({ ...form, assign_to_all: e.target.checked })}
+                  />
+                  Assign to all groups
                 </label>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setForm((p) => ({ ...p, assign_to_all: true, group_ids: [] }))}
-                    className={`rounded-xl border py-2 text-xs font-semibold cursor-pointer ${
-                      form.assign_to_all
-                        ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
-                        : 'border-slate-200 text-slate-600'
-                    }`}
-                  >
-                    All Students
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setForm((p) => ({ ...p, assign_to_all: false }))}
-                    className={`rounded-xl border py-2 text-xs font-semibold cursor-pointer ${
-                      !form.assign_to_all
-                        ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
-                        : 'border-slate-200 text-slate-600'
-                    }`}
-                  >
-                    Specific Groups
-                  </button>
-                </div>
 
                 {!form.assign_to_all && (
-                  <div className="mt-3 max-h-36 space-y-1.5 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    {groups.length === 0 ? (
-                      <p className="text-xs text-slate-500">No groups available yet.</p>
-                    ) : (
-                      groups.map((g) => (
-                        <label
-                          key={g.id}
-                          className="flex cursor-pointer items-center gap-2 text-xs text-slate-800"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={form.group_ids.includes(g.id)}
-                            onChange={() => toggleGroupSelection(g.id)}
-                            className="h-4 w-4 rounded border-slate-300 text-indigo-600"
-                          />
-                          <span className="font-medium">{g.name}</span>
-                          <span className="text-slate-400">
-                            ({(g.members || []).length} members)
-                          </span>
-                        </label>
-                      ))
-                    )}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {groups.map((g) => (
+                      <button
+                        type="button"
+                        key={g.id}
+                        onClick={() => toggleGroupId(g.id)}
+                        className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${
+                          form.group_ids.includes(g.id)
+                            ? 'border-indigo-500 bg-indigo-600 text-white'
+                            : 'border-slate-700 bg-slate-800 text-slate-300'
+                        }`}
+                      >
+                        {g.name}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
+            )}
 
-              <div className="flex justify-end gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60 cursor-pointer"
-                >
-                  {saving ? 'Saving...' : editingId ? 'Update Assignment' : 'Publish Assignment'}
-                </button>
-              </div>
-            </form>
-          </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+              >
+                {saving ? 'Saving...' : editingId ? 'Save Changes' : 'Create Assignment'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
-
-      {/* Custom Obsidian SCSS Confirm Modal for Deleting Assignment */}
-      <ConfirmModal
-        open={Boolean(deleteTarget)}
-        title="Delete Assignment?"
-        message={
-          deleteTarget
-            ? `This will permanently delete "${deleteTarget.title}" along with all confirmed group submissions linked to it. This action cannot be undone.`
-            : ''
-        }
-        confirmText="Delete Assignment"
-        busy={deleting}
-        onConfirm={executeDeleteAssignment}
-        onCancel={() => setDeleteTarget(null)}
-      />
-    </main>
+    </div>
   );
 }

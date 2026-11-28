@@ -1,75 +1,70 @@
-import { useEffect, useState } from 'react';
-import {
-  Users,
-  Plus,
-  UserPlus,
-  Trash2,
-  ExternalLink,
-  CheckCircle2,
-  Clock,
-  Award,
-  X,
-  AlertCircle,
-  Crown,
-} from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
-import ConfirmModal from '../components/ConfirmModal';
+import CourseGrid from '../components/CourseGrid';
 
 export default function StudentDashboard() {
   const { user } = useAuth();
-  const [groups, setGroups] = useState([]);
+
   const [assignments, setAssignments] = useState([]);
   const [progress, setProgress] = useState({ total: 0, completed: 0, pending: 0, percentage: 0 });
+  const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [toast, setToast] = useState('');
 
+  // Group management state
   const [newGroupName, setNewGroupName] = useState('');
+  const [creatingGroup, setCreatingGroup] = useState(false);
   const [memberInputs, setMemberInputs] = useState({});
-  const [feedback, setFeedback] = useState({ type: '', text: '' });
-  const [confirmModal, setConfirmModal] = useState(null);
-  const [removeTarget, setRemoveTarget] = useState(null); // { groupId, groupName, member }
-  const [busy, setBusy] = useState(false);
 
-  const showFeedback = (type, text) => {
-    setFeedback({ type, text });
-    setTimeout(() => setFeedback({ type: '', text: '' }), 4000);
-  };
+  // 2-step confirmation modal state
+  const [modalAssignment, setModalAssignment] = useState(null);
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [confirmStep, setConfirmStep] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
 
-  const fetchDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
     try {
-      const [groupsRes, assignRes] = await Promise.all([
-        api.get('/groups/my'),
+      setLoading(true);
+      setError('');
+      const [assignRes, groupRes] = await Promise.all([
         api.get('/assignments'),
+        api.get('/groups/my'),
       ]);
-      setGroups(groupsRes.data.groups || []);
       setAssignments(assignRes.data.assignments || []);
-      setProgress(
-        assignRes.data.progress || { total: 0, completed: 0, pending: 0, percentage: 0 }
-      );
+      setProgress(assignRes.data.progress || { total: 0, completed: 0, pending: 0, percentage: 0 });
+      setGroups(groupRes.data.groups || []);
     } catch (err) {
-      showFeedback('error', err.response?.data?.message || 'Failed to load student dashboard.');
+      setError(err.response?.data?.message || 'Failed to load student dashboard.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchDashboard();
-  }, []);
+    loadDashboard();
+  }, [loadDashboard]);
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 4000);
+  };
 
   const handleCreateGroup = async (e) => {
     e.preventDefault();
     if (!newGroupName.trim()) return;
-    setBusy(true);
     try {
+      setCreatingGroup(true);
+      setError('');
       await api.post('/groups', { name: newGroupName.trim() });
       setNewGroupName('');
-      showFeedback('success', 'Group created! You can now add teammates by email or Student ID.');
-      await fetchDashboard();
+      showToast('Group created! You are now the Group Leader.');
+      await loadDashboard();
     } catch (err) {
-      showFeedback('error', err.response?.data?.message || 'Could not create group.');
+      setError(err.response?.data?.message || 'Failed to create group.');
     } finally {
-      setBusy(false);
+      setCreatingGroup(false);
     }
   };
 
@@ -77,534 +72,427 @@ export default function StudentDashboard() {
     e.preventDefault();
     const identifier = (memberInputs[groupId] || '').trim();
     if (!identifier) return;
-    setBusy(true);
     try {
+      setError('');
       const res = await api.post(`/groups/${groupId}/members`, { identifier });
       setMemberInputs((prev) => ({ ...prev, [groupId]: '' }));
-      showFeedback('success', res.data.message);
-      await fetchDashboard();
+      showToast(res.data.message || 'Member added!');
+      await loadDashboard();
     } catch (err) {
-      showFeedback('error', err.response?.data?.message || 'Could not add member.');
-    } finally {
-      setBusy(false);
+      setError(err.response?.data?.message || 'Could not add member.');
     }
   };
 
-  const executeRemoveMember = async () => {
-    if (!removeTarget) return;
-    setBusy(true);
+  const handleRemoveMember = async (groupId, userId) => {
+    if (!window.confirm('Remove this member from the group?')) return;
     try {
-      await api.delete(`/groups/${removeTarget.groupId}/members/${removeTarget.member.id}`);
-      const removedName = removeTarget.member.name;
-      const groupName = removeTarget.groupName;
-      setRemoveTarget(null);
-      showFeedback('success', `${removedName} removed from ${groupName}.`);
-      await fetchDashboard();
+      setError('');
+      await api.delete(`/groups/${groupId}/members/${userId}`);
+      showToast('Member removed from group.');
+      await loadDashboard();
     } catch (err) {
-      showFeedback('error', err.response?.data?.message || 'Could not remove member.');
-    } finally {
-      setBusy(false);
+      setError(err.response?.data?.message || 'Could not remove member.');
     }
   };
 
-  // Step 1: Student clicks "Yes, I have submitted"
   const openConfirmModal = (assignment) => {
-    const submittedGroupIds = new Set((assignment.submissions || []).map((s) => s.group_id));
-    const availableGroups = (assignment.eligible_groups || []).filter(
-      (g) => !submittedGroupIds.has(g.id)
-    );
-
-    if (availableGroups.length === 0) {
-      showFeedback('error', 'Create or join a group first before confirming a submission.');
-      return;
+    setModalAssignment(assignment);
+    setConfirmStep(1);
+    if (assignment.submission_type === 'GROUP') {
+      const leaderGroups = (assignment.eligible_groups || []).filter(
+        (g) => g.is_leader || g.leader_id === user?.id
+      );
+      setSelectedGroupId(leaderGroups[0]?.id ? String(leaderGroups[0].id) : '');
+    } else {
+      setSelectedGroupId('');
     }
-
-    setConfirmModal({
-      assignment,
-      availableGroups,
-      selectedGroupId: availableGroups[0].id,
-      checked: false,
-    });
   };
 
-  // Step 2: Final confirmation inside modal
-  const handleFinalConfirm = async () => {
-    if (!confirmModal || !confirmModal.checked) return;
-    setBusy(true);
+  const handleConfirmSubmission = async () => {
+    if (!modalAssignment) return;
     try {
-      await api.post('/submissions/confirm', {
-        assignment_id: confirmModal.assignment.id,
-        group_id: Number(confirmModal.selectedGroupId),
-        confirmed: true,
-      });
-      setConfirmModal(null);
-      showFeedback('success', 'Submission confirmed and recorded for your group!');
-      await fetchDashboard();
+      setSubmitting(true);
+      setError('');
+      const payload = { assignment_id: modalAssignment.id, confirmed: true };
+      if (modalAssignment.submission_type === 'GROUP') {
+        payload.group_id = Number(selectedGroupId);
+      }
+      const res = await api.post('/submissions/confirm', payload);
+      setModalAssignment(null);
+      showToast(res.data.message || 'Submission acknowledged!');
+      await loadDashboard();
     } catch (err) {
-      showFeedback('error', err.response?.data?.message || 'Failed to confirm submission.');
+      setError(err.response?.data?.message || 'Submission confirmation failed.');
+      setModalAssignment(null);
     } finally {
-      setBusy(false);
+      setSubmitting(false);
     }
   };
-
-  if (loading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="h-9 w-9 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
-      </div>
-    );
-  }
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-      {/* Feedback Banner */}
-      {feedback.text && (
-        <div
-          className={`mb-5 flex items-center justify-between rounded-xl border px-4 py-3 text-sm font-medium ${
-            feedback.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-              : 'border-rose-200 bg-rose-50 text-rose-800'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {feedback.type === 'success' ? (
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
+    <div className="min-h-screen bg-[#080d1a] px-4 py-8 text-slate-100">
+      <div className="mx-auto max-w-7xl space-y-8">
+        {/* Welcome Banner & Overall Progress */}
+        <div className="rounded-2xl border border-slate-800 bg-[#0f172a]/90 p-6 shadow-xl backdrop-blur-md">
+          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-white">
+                Welcome back, {user?.name || 'Student'}
+              </h1>
+              <p className="mt-1 text-sm text-slate-400">
+                Select a course below, upload your work to OneDrive, and acknowledge your submission.
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <div className="min-w-[88px] rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-2.5 text-center">
+                <div className="text-xl font-bold text-emerald-400">{progress.completed}</div>
+                <div className="text-xs text-emerald-300/80">Confirmed</div>
+              </div>
+              <div className="min-w-[88px] rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-2.5 text-center">
+                <div className="text-xl font-bold text-amber-400">{progress.pending}</div>
+                <div className="text-xs text-amber-300/80">Pending</div>
+              </div>
+              <div className="min-w-[88px] rounded-xl border border-indigo-500/20 bg-indigo-500/10 px-4 py-2.5 text-center">
+                <div className="text-xl font-bold text-indigo-400">{progress.percentage}%</div>
+                <div className="text-xs text-indigo-300/80">Progress</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5">
+            <div className="flex justify-between text-xs text-slate-400">
+              <span>Overall Assignment Completion</span>
+              <span>
+                {progress.completed} of {progress.total} completed
+              </span>
+            </div>
+            <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-emerald-400 transition-all duration-700"
+                style={{ width: `${progress.percentage}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Alerts */}
+        {toast && (
+          <div className="flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-4 py-3 text-sm font-medium text-emerald-300 animate-fade-up">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white animate-check-pop">
+              ✓
+            </span>
+            <span>{toast}</span>
+          </div>
+        )}
+        {error && (
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/15 px-4 py-3 text-sm text-rose-300">
+            {error}
+          </div>
+        )}
+
+        {/* ROUND 2: Course-Centric Cards Grid */}
+        <CourseGrid role="STUDENT" />
+
+        {/* Main 2-Column Workspace: All Assignments + My Groups */}
+        <div className="grid gap-6 lg:grid-cols-3">
+          {/* Left: Assignments Overview */}
+          <div className="space-y-4 lg:col-span-2">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">All Assignments</h2>
+              <span className="rounded-full border border-slate-700 bg-slate-800/80 px-3 py-0.5 text-xs font-semibold text-slate-300">
+                {assignments.length} total
+              </span>
+            </div>
+
+            {loading ? (
+              <div className="space-y-4">
+                <div className="h-40 animate-pulse rounded-2xl bg-slate-800/70" />
+                <div className="h-40 animate-pulse rounded-2xl bg-slate-800/70" />
+              </div>
+            ) : assignments.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 p-10 text-center text-sm text-slate-400">
+                No assignments assigned yet.
+              </div>
             ) : (
-              <AlertCircle className="h-4 w-4 shrink-0" />
-            )}
-            <span>{feedback.text}</span>
-          </div>
-          <button
-            onClick={() => setFeedback({ type: '', text: '' })}
-            className="opacity-70 hover:opacity-100 cursor-pointer"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
+              assignments.map((a) => {
+                const isGroup = a.submission_type === 'GROUP';
+                const latestSub = a.submissions?.[0];
 
-      {/* Progress Banner */}
-      <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold text-slate-900">
-                Welcome back, {user?.name}
-              </h2>
-              {progress.percentage === 100 && progress.total > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-                  <Award className="h-3.5 w-3.5" /> All Caught Up
-                </span>
-              )}
-            </div>
-            <p className="mt-1 text-sm text-slate-500">
-              Upload your group work to OneDrive, then confirm your submission below.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-4 text-center">
-            <div className="rounded-xl bg-emerald-50 px-4 py-2">
-              <p className="text-xl font-bold text-emerald-700">{progress.completed}</p>
-              <p className="text-xs font-medium text-emerald-600">Confirmed</p>
-            </div>
-            <div className="rounded-xl bg-amber-50 px-4 py-2">
-              <p className="text-xl font-bold text-amber-700">{progress.pending}</p>
-              <p className="text-xs font-medium text-amber-600">Pending</p>
-            </div>
-            <div className="rounded-xl bg-indigo-50 px-4 py-2">
-              <p className="text-xl font-bold text-indigo-700">{progress.percentage}%</p>
-              <p className="text-xs font-medium text-indigo-600">Progress</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <div className="mb-1.5 flex justify-between text-xs font-semibold text-slate-600">
-            <span>Group Assignment Completion</span>
-            <span>
-              {progress.completed} of {progress.total} completed
-            </span>
-          </div>
-          <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all duration-500"
-              style={{ width: `${progress.percentage}%` }}
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* Main 2-Column Layout */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* Assignments Column */}
-        <section className="space-y-4 lg:col-span-7">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-slate-900">Your Assignments</h3>
-            <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
-              {assignments.length} total
-            </span>
-          </div>
-
-          {assignments.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-              No assignments posted yet. Check back once your professor publishes one.
-            </div>
-          ) : (
-            assignments.map((a) => {
-              const dueDate = new Date(a.due_date);
-              const isOverdue = !a.is_submitted && dueDate < new Date();
-              const submittedGroupIds = new Set((a.submissions || []).map((s) => s.group_id));
-              const remainingEligible = (a.eligible_groups || []).filter(
-                (g) => !submittedGroupIds.has(g.id)
-              );
-
-              return (
-                <div
-                  key={a.id}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-200"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="text-base font-bold text-slate-900">{a.title}</h4>
-                        <span
-                          className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                            a.assign_to_all
-                              ? 'bg-sky-50 text-sky-700'
-                              : 'bg-purple-50 text-purple-700'
-                          }`}
-                        >
-                          {a.assign_to_all ? 'All Students' : 'Targeted Group'}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-sm text-slate-600">{a.description}</p>
-                    </div>
-
-                    {a.is_submitted ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        Confirmed
-                      </span>
-                    ) : (
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${
-                          isOverdue
-                            ? 'bg-rose-100 text-rose-700'
-                            : 'bg-amber-100 text-amber-700'
-                        }`}
-                      >
-                        <Clock className="h-3.5 w-3.5" />
-                        {isOverdue ? 'Overdue' : 'Pending'}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-500">
-                    <span>
-                      Due:{' '}
-                      <strong className="text-slate-700">
-                        {dueDate.toLocaleString([], {
-                          dateStyle: 'medium',
-                          timeStyle: 'short',
-                        })}
-                      </strong>
-                    </span>
-                    {a.creator_name && (
-                      <span>
-                        Posted by: <strong className="text-slate-700">{a.creator_name}</strong>
-                      </span>
-                    )}
-                  </div>
-
-                  {(a.submissions || []).length > 0 && (
-                    <div className="mt-3 space-y-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-800">
-                      {a.submissions.map((sub) => (
-                        <div key={sub.id} className="flex flex-wrap items-center justify-between gap-2">
-                          <span>
-                            Confirmed for <strong>{sub.group_name}</strong> by{' '}
-                            <strong>{sub.submitted_by_name}</strong>
-                          </span>
-                          <span className="text-emerald-700">
-                            {new Date(sub.confirmed_at).toLocaleString([], {
-                              dateStyle: 'short',
-                              timeStyle: 'short',
-                            })}
+                return (
+                  <div
+                    key={a.id}
+                    className={`rounded-2xl border bg-[#0f172a]/90 p-5 shadow-lg transition ${
+                      a.is_submitted
+                        ? 'border-emerald-500/30'
+                        : 'border-slate-800 hover:border-indigo-500/40'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-base font-bold text-white">{a.title}</h3>
+                          {a.course_code && (
+                            <span className="rounded-md bg-indigo-500/20 px-2 py-0.5 text-[11px] font-bold text-indigo-300">
+                              {a.course_code}
+                            </span>
+                          )}
+                          <span
+                            className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                              isGroup
+                                ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30'
+                                : 'bg-sky-500/15 text-sky-300 border border-sky-500/30'
+                            }`}
+                          >
+                            {isGroup ? 'Group' : 'Individual'}
                           </span>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        <p className="mt-1.5 text-sm text-slate-400">{a.description}</p>
+                        <p className="mt-2 text-xs text-slate-500">
+                          Due: {new Date(a.due_date).toLocaleString()} • Posted by:{' '}
+                          <span className="text-slate-300">{a.creator_name || 'Professor'}</span>
+                        </p>
+                      </div>
 
-                  <div className="mt-4 flex flex-wrap items-center gap-3">
-                    <a
-                      href={a.onedrive_link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Open OneDrive Link
-                    </a>
-
-                    {remainingEligible.length > 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => openConfirmModal(a)}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 cursor-pointer"
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-bold ${
+                          a.is_submitted
+                            ? 'border border-emerald-500/30 bg-emerald-500/15 text-emerald-300'
+                            : 'border border-amber-500/30 bg-amber-500/15 text-amber-300'
+                        }`}
                       >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        Yes, I have submitted
-                      </button>
-                    ) : (
-                      !a.is_submitted && (
-                        <span className="text-xs font-medium text-amber-700">
-                          Create or join a group to confirm submission
-                        </span>
-                      )
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </section>
+                        {a.is_submitted ? '✓ Confirmed' : 'Pending'}
+                      </span>
+                    </div>
 
-        {/* Groups Column */}
-        <section className="space-y-4 lg:col-span-5">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-slate-900">My Groups</h3>
-            <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
-              {groups.length} active
-            </span>
+                    <div className="mt-4 space-y-3">
+                      {a.is_submitted && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-300">
+                          <span>
+                            {isGroup
+                              ? `Confirmed for ${latestSub?.group_name || 'Group'} by ${latestSub?.submitted_by_name || 'Leader'}`
+                              : 'Confirmed individually by you'}
+                          </span>
+                          {latestSub?.confirmed_at && (
+                            <span className="text-emerald-400/80">
+                              {new Date(latestSub.confirmed_at).toLocaleString()}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap items-center gap-3">
+                        <a
+                          href={a.onedrive_link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1.5 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20"
+                        >
+                          Open OneDrive Link ↗
+                        </a>
+
+                        {!a.is_submitted && a.can_acknowledge && (
+                          <button
+                            onClick={() => openConfirmModal(a)}
+                            className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500"
+                          >
+                            {isGroup ? 'Acknowledge as Leader' : 'Acknowledge Submission'}
+                          </button>
+                        )}
+                      </div>
+
+                      {!a.is_submitted && a.leader_required_message && (
+                        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                          <strong className="text-amber-300">🔒 Leader Only: </strong>
+                          {a.leader_required_message}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
 
-          <form
-            onSubmit={handleCreateGroup}
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-          >
-            <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Create a New Group
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newGroupName}
-                onChange={(e) => setNewGroupName(e.target.value)}
-                placeholder="e.g. Cloud Ninjas"
-                required
-                className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-              />
-              <button
-                type="submit"
-                disabled={busy}
-                className="inline-flex items-center gap-1 rounded-xl bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60 cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                Create
-              </button>
+          {/* Right: My Groups */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">My Groups</h2>
+              <span className="rounded-full border border-slate-700 bg-slate-800/80 px-3 py-0.5 text-xs font-semibold text-slate-300">
+                {groups.length} active
+              </span>
             </div>
-          </form>
 
-          {groups.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-              You aren&apos;t in any group yet. Create one above or ask a teammate to add you using
-              your email or Student ID (<strong>{user?.student_id || user?.email}</strong>).
-            </div>
-          ) : (
-            groups.map((g) => {
-              const members = g.members || [];
-              const isLeader = g.created_by === user?.id;
+            {/* Create New Group */}
+            <form
+              onSubmit={handleCreateGroup}
+              className="rounded-2xl border border-slate-800 bg-[#0f172a]/90 p-4 shadow-lg"
+            >
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                Create a New Group
+              </label>
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. Cloud Ninjas"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={creatingGroup}
+                  className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+                >
+                  + Create
+                </button>
+              </div>
+            </form>
+
+            {/* Group List */}
+            {groups.map((g) => {
+              const isLeader = g.leader_id === user?.id || g.created_by === user?.id;
               return (
                 <div
                   key={g.id}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                  className="rounded-2xl border border-slate-800 bg-[#0f172a]/90 p-4 shadow-lg"
                 >
-                  <div className="mb-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-                        <Users className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-bold text-slate-900">{g.name}</h4>
-                        <p className="text-xs text-slate-500">
-                          {members.length} {members.length === 1 ? 'member' : 'members'}
-                        </p>
-                      </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-bold text-white">{g.name}</h3>
+                      <p className="text-xs text-slate-400">{g.members?.length || 0} members</p>
                     </div>
                     {isLeader && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-                        <Crown className="h-3 w-3" /> Leader
+                      <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2.5 py-0.5 text-xs font-bold text-amber-300">
+                        👑 Leader
                       </span>
                     )}
                   </div>
 
-                  <ul className="mb-3 divide-y divide-slate-100 rounded-xl border border-slate-100 bg-slate-50/70">
-                    {members.map((m) => (
-                      <li
+                  <div className="mt-3 space-y-2">
+                    {(g.members || []).map((m) => (
+                      <div
                         key={m.id}
-                        className="flex items-center justify-between px-3 py-2 text-xs"
+                        className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2"
                       >
                         <div>
-                          <p className="font-semibold text-slate-800">
+                          <div className="text-xs font-semibold text-white">
                             {m.name}{' '}
                             {m.is_leader && (
-                              <span className="ml-1 text-[10px] font-bold text-amber-600">
-                                (Leader)
-                              </span>
+                              <span className="text-amber-400">(Leader)</span>
                             )}
-                          </p>
-                          <p className="text-slate-500">
+                          </div>
+                          <div className="text-[11px] text-slate-400">
                             {m.email} {m.student_id ? `• ${m.student_id}` : ''}
-                          </p>
+                          </div>
                         </div>
 
                         {!m.is_leader && (isLeader || m.id === user?.id) && (
                           <button
-                            type="button"
-                            onClick={() =>
-                              setRemoveTarget({ groupId: g.id, groupName: g.name, member: m })
-                            }
+                            onClick={() => handleRemoveMember(g.id, m.id)}
+                            className="rounded-lg p-1.5 text-xs text-slate-400 hover:bg-rose-500/15 hover:text-rose-400"
                             title="Remove member"
-                            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            🗑
                           </button>
                         )}
-                      </li>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
 
-                  <form onSubmit={(e) => handleAddMember(e, g.id)} className="flex gap-2">
+                  {/* Add Member Form */}
+                  <form
+                    onSubmit={(e) => handleAddMember(e, g.id)}
+                    className="mt-3 flex gap-2"
+                  >
                     <input
                       type="text"
+                      placeholder="Email or Student ID (e.g. STU104)"
                       value={memberInputs[g.id] || ''}
                       onChange={(e) =>
                         setMemberInputs((prev) => ({ ...prev, [g.id]: e.target.value }))
                       }
-                      placeholder="Add by email or Student ID (e.g. STU104)"
-                      className="flex-1 rounded-xl border border-slate-300 px-3 py-1.5 text-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
                     />
                     <button
                       type="submit"
-                      disabled={busy}
-                      className="inline-flex items-center gap-1 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-60 cursor-pointer"
+                      className="shrink-0 rounded-xl border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700"
                     >
-                      <UserPlus className="h-3.5 w-3.5" />
-                      Add
+                      + Add
                     </button>
                   </form>
                 </div>
               );
-            })
-          )}
-        </section>
+            })}
+          </div>
+        </div>
       </div>
 
-      {/* Step 2: Two-Step Submission Verification Modal */}
-      {confirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="mb-4 flex items-start justify-between">
-              <div>
-                <span className="inline-block rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800">
-                  Step 2 of 2 — Final Verification
-                </span>
-                <h3 className="mt-1.5 text-lg font-bold text-slate-900">
-                  Confirm Assignment Submission
-                </h3>
+      {/* 2-Step Confirmation Modal */}
+      {modalAssignment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-[#0f172a] p-6 shadow-2xl animate-fade-up">
+            <h3 className="text-lg font-bold text-white">
+              {confirmStep === 1 ? 'Step 1 of 2: Verify Upload' : 'Step 2 of 2: Confirm Acknowledgment'}
+            </h3>
+            <p className="mt-1 text-sm text-slate-300">
+              Assignment: <strong className="text-white">{modalAssignment.title}</strong>
+            </p>
+
+            {modalAssignment.submission_type === 'GROUP' && (
+              <div className="mt-4">
+                <label className="block text-xs font-semibold uppercase text-slate-400">
+                  Submitting as Leader for Group
+                </label>
+                <select
+                  value={selectedGroupId}
+                  onChange={(e) => setSelectedGroupId(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                >
+                  {(modalAssignment.eligible_groups || [])
+                    .filter((g) => g.is_leader || g.leader_id === user?.id)
+                    .map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name} (Leader)
+                      </option>
+                    ))}
+                </select>
               </div>
+            )}
+
+            <div className="mt-4 rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs text-indigo-200">
+              {confirmStep === 1
+                ? 'Please ensure your work is uploaded to the OneDrive link before proceeding.'
+                : 'Once confirmed, your submission status will be recorded immediately.'}
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
               <button
-                onClick={() => setConfirmModal(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-sm">
-              <p className="font-semibold text-slate-900">{confirmModal.assignment.title}</p>
-              <a
-                href={confirmModal.assignment.onedrive_link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline"
-              >
-                Verify OneDrive link <ExternalLink className="h-3 w-3" />
-              </a>
-            </div>
-
-            <div className="mb-4">
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                Submitting On Behalf Of Group
-              </label>
-              <select
-                value={confirmModal.selectedGroupId}
-                onChange={(e) =>
-                  setConfirmModal((prev) => ({ ...prev, selectedGroupId: e.target.value }))
-                }
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
-              >
-                {confirmModal.availableGroups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <label className="mb-5 flex cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200 p-3 text-xs text-slate-700 hover:bg-slate-50">
-              <input
-                type="checkbox"
-                checked={confirmModal.checked}
-                onChange={(e) =>
-                  setConfirmModal((prev) => ({ ...prev, checked: e.target.checked }))
-                }
-                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-              />
-              <span>
-                I confirm that our group has uploaded the final files to the provided OneDrive
-                folder and this submission is ready for grading.
-              </span>
-            </label>
-
-            <div className="flex justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => setConfirmModal(null)}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+                onClick={() => setModalAssignment(null)}
+                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-300"
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                disabled={!confirmModal.checked || busy}
-                onClick={handleFinalConfirm}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                {busy ? 'Confirming...' : 'Confirm Submission'}
-              </button>
+              {confirmStep === 1 ? (
+                <button
+                  onClick={() => setConfirmStep(2)}
+                  className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+                >
+                  Yes, Uploaded →
+                </button>
+              ) : (
+                <button
+                  onClick={handleConfirmSubmission}
+                  disabled={submitting}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                >
+                  {submitting ? 'Saving...' : 'Confirm ✓'}
+                </button>
+              )}
             </div>
           </div>
         </div>
       )}
-
-      {/* Custom Obsidian SCSS Confirm Modal for Removing Member / Leaving Group */}
-      <ConfirmModal
-        open={Boolean(removeTarget)}
-        title={removeTarget?.member?.id === user?.id ? 'Leave Group?' : 'Remove Group Member?'}
-        message={
-          removeTarget
-            ? removeTarget.member.id === user?.id
-              ? `Are you sure you want to leave "${removeTarget.groupName}"? You will lose access to this group's assignment submissions.`
-              : `Are you sure you want to remove ${removeTarget.member.name} (${removeTarget.member.email}) from "${removeTarget.groupName}"?`
-            : ''
-        }
-        confirmText={removeTarget?.member?.id === user?.id ? 'Leave Group' : 'Remove Member'}
-        busy={busy}
-        onConfirm={executeRemoveMember}
-        onCancel={() => setRemoveTarget(null)}
-      />
-    </main>
+    </div>
   );
 }
