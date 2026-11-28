@@ -4,6 +4,8 @@ import Navbar from './components/Navbar';
 import AuthPage from './pages/AuthPage';
 import StudentDashboard from './pages/StudentDashboard';
 import AdminDashboard from './pages/AdminDashboard';
+import CourseAssignmentsPage from './pages/CourseAssignmentsPage';
+import AdminCoursePage from './pages/AdminCoursePage';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -38,12 +40,40 @@ function AppRoutes() {
         />
 
         <Route
+          path="/student/courses/:courseId"
+          element={
+            role === 'STUDENT' ? (
+              <>
+                <Navbar />
+                <CourseAssignmentsPage />
+              </>
+            ) : (
+              <Navigate to={role === 'ADMIN' ? '/admin' : '/auth'} replace />
+            )
+          }
+        />
+
+        <Route
           path="/admin"
           element={
             role === 'ADMIN' ? (
               <>
                 <Navbar />
                 <AdminDashboard />
+              </>
+            ) : (
+              <Navigate to={role === 'STUDENT' ? '/student' : '/auth'} replace />
+            )
+          }
+        />
+
+        <Route
+          path="/admin/courses/:courseId"
+          element={
+            role === 'ADMIN' ? (
+              <>
+                <Navbar />
+                <AdminCoursePage />
               </>
             ) : (
               <Navigate to={role === 'STUDENT' ? '/student' : '/auth'} replace />
