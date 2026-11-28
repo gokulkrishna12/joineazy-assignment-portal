@@ -95,6 +95,15 @@
   }
 }
 
+@keyframes spinLoader {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
 .animate-check-pop {
   animation: checkPop 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
@@ -108,5 +117,44 @@
   &:hover {
     transform: translateY(-4px);
     box-shadow: 0 14px 30px -10px rgba(79, 70, 229, 0.18);
+  }
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2.5px solid rgba(255, 255, 255, 0.28);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spinLoader 0.7s linear infinite;
+}
+
+.loading-spinner-lg {
+  display: inline-block;
+  width: 42px;
+  height: 42px;
+  border: 3.5px solid rgba(99, 102, 241, 0.25);
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spinLoader 0.75s linear infinite;
+}
+
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+  background-color: #1e293b;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(148, 163, 184, 0.16) 50%,
+      transparent 100%
+    );
+    animation: progressShimmer 1.4s ease-in-out infinite;
   }
 }

@@ -31,12 +31,15 @@ export default function CourseGrid({ role = 'STUDENT' }) {
   if (loading) {
     return (
       <section className="mb-8">
-        <div className="mb-4 h-7 w-52 animate-pulse rounded-lg bg-slate-800" />
+        <div className="mb-4 flex items-center gap-3 text-sm font-medium text-indigo-300">
+          <span className="loading-spinner" />
+          <span>Loading courses...</span>
+        </div>
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((n) => (
             <div
               key={n}
-              className="h-52 animate-pulse rounded-2xl border border-slate-800 bg-slate-900/60"
+              className="skeleton-shimmer h-52 rounded-2xl border border-slate-800"
             />
           ))}
         </div>
@@ -143,7 +146,6 @@ export default function CourseGrid({ role = 'STUDENT' }) {
                     </div>
                   )}
 
-                  {/* Animated Progress Bar */}
                   <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
                     <span>{isAdmin ? 'Submission Rate' : 'Progress'}</span>
                     <span className="text-indigo-400">{rate}%</span>

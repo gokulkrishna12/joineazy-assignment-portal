@@ -15,7 +15,6 @@ export default function CourseAssignmentsPage() {
   const [toast, setToast] = useState('');
   const [justConfirmedId, setJustConfirmedId] = useState(null);
 
-  // 2-step confirmation modal state
   const [modalAssignment, setModalAssignment] = useState(null);
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [confirmStep, setConfirmStep] = useState(1);
@@ -85,14 +84,9 @@ export default function CourseAssignmentsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#080d1a] px-4 py-10 text-slate-100">
-        <div className="mx-auto max-w-6xl">
-          <div className="mb-6 h-32 animate-pulse rounded-2xl bg-slate-800/80" />
-          <div className="grid gap-5 md:grid-cols-2">
-            <div className="h-56 animate-pulse rounded-2xl bg-slate-800/70" />
-            <div className="h-56 animate-pulse rounded-2xl bg-slate-800/70" />
-          </div>
-        </div>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#080d1a] text-slate-300">
+        <span className="loading-spinner-lg" />
+        <p className="text-sm font-medium text-indigo-300">Loading course assignments...</p>
       </div>
     );
   }
@@ -100,7 +94,6 @@ export default function CourseAssignmentsPage() {
   return (
     <div className="min-h-screen bg-[#080d1a] px-4 py-8 text-slate-100">
       <div className="mx-auto max-w-6xl animate-fade-up">
-        {/* Breadcrumb */}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
           <Link
             to="/student"
@@ -115,7 +108,6 @@ export default function CourseAssignmentsPage() {
           )}
         </div>
 
-        {/* Toast & Error */}
         {toast && (
           <div className="mb-5 flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-4 py-3 text-sm font-medium text-emerald-300 shadow-sm animate-fade-up">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white animate-check-pop">
@@ -130,7 +122,6 @@ export default function CourseAssignmentsPage() {
           </div>
         )}
 
-        {/* Course Header + Animated Progress Bar */}
         {course && (
           <div
             className="mb-8 rounded-2xl border border-slate-800 bg-[#0f172a]/90 p-6 shadow-xl backdrop-blur-md"
@@ -168,7 +159,6 @@ export default function CourseAssignmentsPage() {
           </div>
         )}
 
-        {/* Assignments Grid */}
         {assignments.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 p-12 text-center text-slate-400">
             No assignments posted for this course yet.
@@ -190,7 +180,6 @@ export default function CourseAssignmentsPage() {
                   }`}
                 >
                   <div>
-                    {/* Top Badges */}
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span
@@ -234,11 +223,9 @@ export default function CourseAssignmentsPage() {
                       </span>
                     </div>
 
-                    {/* Title & Description */}
                     <h2 className="mt-3 text-lg font-bold text-white">{a.title}</h2>
                     <p className="mt-1.5 text-sm leading-relaxed text-slate-400">{a.description}</p>
 
-                    {/* Per-Assignment Mini Progress Bar */}
                     <div className="mt-4">
                       <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
                         <div
@@ -250,7 +237,6 @@ export default function CourseAssignmentsPage() {
                     </div>
                   </div>
 
-                  {/* Footer Actions */}
                   <div className="mt-5 space-y-3 border-t border-slate-800 pt-4">
                     <a
                       href={a.onedrive_link}
@@ -306,7 +292,6 @@ export default function CourseAssignmentsPage() {
         )}
       </div>
 
-      {/* 2-Step Confirmation Modal */}
       {modalAssignment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-[#0f172a] p-6 shadow-2xl animate-fade-up">
@@ -364,9 +349,16 @@ export default function CourseAssignmentsPage() {
                 <button
                   onClick={handleConfirmSubmission}
                   disabled={submitting}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
                 >
-                  {submitting ? 'Saving...' : 'Confirm Acknowledgment ✓'}
+                  {submitting ? (
+                    <>
+                      <span className="loading-spinner" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Confirm Acknowledgment ✓'
+                  )}
                 </button>
               )}
             </div>

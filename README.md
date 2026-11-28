@@ -1,199 +1,127 @@
-# Joineazy — Student, Group & Assignment Management System
+Markdown
+# Joineazy Portal — Course, Group & Assignment Management System
 
-A full-stack, role-based web platform enabling students to form groups, manage teammates, access OneDrive submission links, and verify submissions through a two-step confirmation flow—while professors create targeted assignments and track real-time completion analytics.
+A full-stack academic assignment management and submission-tracking portal built for **Joineazy (Round 2)**. It connects **Students** and **Professors** through course-centric dashboards, OneDrive submission workflows, strict group-leader-only acknowledgment rules, real-time analytics, and role-gated authentication.
 
----
-
-## Key Features
-
-### Authentication & Security
-- **Role-Based JWT Access Control** (`STUDENT` and `ADMIN` / Professor roles).
-- **Gmail OTP Verification** for new account registration (10-minute expiring 6-digit codes stored in PostgreSQL).
-- **Forgot & Reset Password via Gmail OTP**.
-- **Google OAuth 2.0 Sign-In** with automatic account linking and JWT issuance.
-
-### Student Role
-- Create groups and automatically become the group leader.
-- Add or remove group members using **Student Email or Student ID** (e.g., `STU101`).
-- View all general and group-targeted assignments with OneDrive links and due dates.
-- Confirm submissions via a **two-step verification workflow** (*"Yes, I have submitted"* → group selection & checkbox confirmation modal).
-- Track completion visually using an animated progress bar and status badges.
-
-### Professor (Admin) Role
-- Create, edit, and delete assignments with OneDrive submission links and deadlines.
-- Target assignments to **All Students** or **Specific Groups**.
-- Monitor **group-wise** and **student-wise** submission confirmations in dedicated tables.
-- View real-time **Recharts analytics** (confirmed vs. pending submissions per assignment and group completion rates).
+- **Live Frontend (Netlify):** [https://voluble-starburst-5ed85d.netlify.app](https://voluble-starburst-5ed85d.netlify.app)
+- **Live Backend API (Railway):** [https://joineazy-assignment-portal-production.up.railway.app](https://joineazy-assignment-portal-production.up.railway.app)
+- **Database:** PostgreSQL (Neon Cloud)
 
 ---
 
-## System Architecture Overview
+## Key Features & Round 2 Enhancements
 
-```text
-[ React + Vite + Tailwind/SCSS ]
-        │  HTTPS / JSON + Bearer JWT
-        ▼
-[ Node.js + Express REST API ]  ──►  Gmail SMTP (Nodemailer OTP)
-        │                       ──►  Google OAuth 2.0 Token Verification
-        │  Parameterized SQL (pg Pool)
-        ▼
-[ PostgreSQL (Neon Cloud / Docker) ]
-```
+### 1. Course-Centric Dashboards
+- **Student Workspace:** Responsive course-card grid (`CS301`, `CS302`, `CS303`) displaying instructor details, completed vs. pending counts, and animated progress bars. Newly registered students are auto-enrolled so they never land on an empty workspace.
+- **Professor Control Center:** Displays all courses taught with enrolled student counts, confirmed vs. pending submission totals, overall completion rate, and interactive **Recharts** analytics.
 
-1. **Frontend (`frontend/`)**: Single-page React app communicating via a centralized Axios client that injects JWT tokens from `localStorage`.
-2. **Backend (`backend/`)**: Modular Express API organized into `config/`, `middleware/`, `controllers/`, and `routes/`. Protected routes verify JWT signatures (`authenticate`) and enforce role gates (`authorize('ADMIN')` / `authorize('STUDENT')`).
-3. **Database**: Normalized PostgreSQL relational schema initialized automatically via `src/config/initDb.js`, with transactional writes (`BEGIN` / `COMMIT` / `ROLLBACK`) for multi-table operations like group creation and targeted assignment publishing.
+### 2. Individual vs. Group Submissions & Leader-Only Rule
+- Professors can create course-linked assignments as either **Individual** or **Group** (`GROUP` / `INDIVIDUAL`) and target all groups or specific groups.
+- **Strict Group-Leader Enforcement:** For `GROUP` assignments, only the verified Group Leader (`is_leader` / `groups.leader_id`) can acknowledge a submission via a **2-step confirmation modal**. Non-leader members see a clear **🔒 Leader Action Required** banner and are blocked at the API level (`403 Forbidden`).
+- **Automatic Group Propagation:** Once the leader acknowledges a group assignment, the `✓ Acknowledged` status immediately reflects across every member in that group.
 
----
+### 3. Professor Status Filtering & CRUD
+- Full Create, Edit, and Delete support for course-scoped assignments.
+- Interactive status filter pills (**`All Statuses`**, **`✓ Acknowledged`**, **`⏳ Pending`**) across both **Student-wise Tracking** and **Group-wise Tracking** tables.
 
-## Database Schema & ER Diagram
-
-```mermaid
-erDiagram
-    USERS ||--o{ GROUPS : creates
-    USERS ||--o{ GROUP_MEMBERS : joins
-    GROUPS ||--o{ GROUP_MEMBERS : contains
-    USERS ||--o{ ASSIGNMENTS : posts
-    ASSIGNMENTS ||--o{ ASSIGNMENT_GROUPS : targets
-    GROUPS ||--o{ ASSIGNMENT_GROUPS : receives
-    ASSIGNMENTS ||--o{ SUBMISSIONS : tracks
-    GROUPS ||--o{ SUBMISSIONS : submits
-    USERS ||--o{ SUBMISSIONS : confirms
-
-    USERS {
-        serial id PK
-        varchar name
-        varchar email UK
-        varchar student_id UK
-        text password_hash
-        varchar role
-        boolean is_verified
-        varchar google_id UK
-    }
-
-    EMAIL_OTPS {
-        serial id PK
-        varchar email
-        varchar otp_code
-        varchar purpose
-        timestamp expires_at
-        boolean used
-    }
-
-    GROUPS {
-        serial id PK
-        varchar name
-        int created_by FK
-    }
-
-    GROUP_MEMBERS {
-        serial id PK
-        int group_id FK
-        int user_id FK
-        boolean is_leader
-    }
-
-    ASSIGNMENTS {
-        serial id PK
-        varchar title
-        text description
-        timestamp due_date
-        text onedrive_link
-        boolean assign_to_all
-        int created_by FK
-    }
-
-    ASSIGNMENT_GROUPS {
-        int assignment_id PK,FK
-        int group_id PK,FK
-    }
-
-    SUBMISSIONS {
-        serial id PK
-        int assignment_id FK
-        int group_id FK
-        int submitted_by FK
-        varchar status
-        timestamp confirmed_at
-    }
-```
+### 4. Multi-Layer Authentication & Security
+- **JWT Role-Based Access Control** (`STUDENT` / `ADMIN`) with protected routes and middleware guards.
+- **Professor / Faculty Access ID Verification:** Registering as a Professor requires a valid institutional Faculty ID (`PROF2026`, `FAC101`, `FAC102` — configurable via `PROFESSOR_ACCESS_CODES`), enforced on both Email/OTP registration and Google OAuth sign-up.
+- **Gmail 6-Digit OTP Verification & Password Recovery** + **Google OAuth 2.0 Sign-In**.
 
 ---
 
-## API Endpoints
+## UI/UX Design Rationale
 
-### Auth (`/api/auth`)
+- **Dark Navy Glassmorphism Theme (`#080d1a` canvas + `#0f172a` elevated cards):** Reduces visual fatigue during long academic sessions while giving high contrast to status indicators.
+- **Semantic Color Coding:** Emerald (`#10b981`) for acknowledged submissions, Amber (`#f59e0b`) for pending/leader-locked items, Rose (`#f43f5e`) for overdue alerts, and Purple/Sky pills to distinguish Group vs. Individual assignments at a glance.
+- **Micro-Interactions (`_animations.scss`):** Smooth `fadeSlideUp` page transitions, `course-card-hover` lift states, `checkPop` completion checkmark bounce, and animated gradient progress bars.
+- **2-Step Confirmation Modal:** Prevents accidental submission acknowledgments by verifying OneDrive upload before writing to PostgreSQL.
+
+---
+
+## Tech Stack
+
+| Layer | Technologies |
+| :--- | :--- |
+| **Frontend** | React 18, Vite, React Router v6, Tailwind CSS, SCSS, Axios, Recharts, Lucide React, `@react-oauth/google` |
+| **Backend** | Node.js, Express.js, JWT (`jsonwebtoken`), `bcryptjs`, `google-auth-library`, Nodemailer |
+| **Database** | PostgreSQL (9 normalized tables on Neon Cloud) |
+| **Deployment** | Netlify (Frontend SPA with `_redirects`), Railway (Backend API), Docker Compose (Local) |
+
+---
+
+## Database Schema (9 PostgreSQL Tables)
+
+1. `users` — Students and Professors (`id`, `name`, `email`, `student_id`, `password_hash`, `role`, `is_verified`, `google_id`)
+2. `email_otps` — 6-digit OTP codes with 10-minute expiry for registration & password reset
+3. `courses` — Course catalog (`code`, `title`, `description`, `semester`, `accent_color`, `professor_id`)
+4. `course_enrollments` — Many-to-many student enrollment mapping
+5. `groups` — Student teams with explicit `leader_id` foreign key
+6. `group_members` — Team membership with `is_leader` flag
+7. `assignments` — Course-linked assignments (`course_id`, `submission_type`: `INDIVIDUAL` | `GROUP`, `due_date`, `onedrive_link`, `assign_to_all`)
+8. `assignment_groups` — Targeted group mapping for selective group assignments
+9. `submissions` — Tracks both Group (`group_id`) and Individual (`student_id`) acknowledgments with partial unique indexes preventing duplicates
+
+---
+
+## Key API Endpoints
+
 | Method | Endpoint | Access | Description |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/auth/send-register-otp` | Public | Sends a 6-digit verification OTP to Gmail |
-| `POST` | `/api/auth/register` | Public | Verifies OTP and creates a Student/Admin account |
+| `POST` | `/api/auth/send-register-otp` | Public | Sends 6-digit verification OTP to Gmail |
+| `POST` | `/api/auth/register` | Public | Registers Student or Professor (verifies OTP + Faculty Access ID for `ADMIN`) |
 | `POST` | `/api/auth/login` | Public | Authenticates user and returns JWT |
-| `POST` | `/api/auth/google` | Public | Verifies Google ID token and issues JWT |
-| `POST` | `/api/auth/forgot-password` | Public | Sends password reset OTP to Gmail |
-| `POST` | `/api/auth/reset-password` | Public | Verifies reset OTP and updates password |
-| `GET` | `/api/auth/me` | Authenticated | Returns current logged-in user profile |
-
-### Groups (`/api/groups`)
-| Method | Endpoint | Access | Description |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/api/groups` | Student | Creates a new group and assigns creator as leader |
-| `GET` | `/api/groups/my` | Student | Lists groups the student belongs to with members |
-| `GET` | `/api/groups` | Admin | Lists all student groups and their members |
-| `POST` | `/api/groups/:groupId/members` | Student | Adds a student to a group by Email or Student ID |
-| `DELETE` | `/api/groups/:groupId/members/:userId` | Student | Removes a member (leader) or leaves the group |
-
-### Assignments (`/api/assignments`)
-| Method | Endpoint | Access | Description |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/assignments` | Authenticated | Role-aware list (Admin stats / Student progress) |
-| `POST` | `/api/assignments` | Admin | Creates assignment for all students or selected groups |
-| `PUT` | `/api/assignments/:id` | Admin | Updates assignment details and target groups |
-| `DELETE` | `/api/assignments/:id` | Admin | Deletes assignment and cascading records |
-
-### Submissions & Analytics (`/api/submissions`)
-| Method | Endpoint | Access | Description |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/api/submissions/confirm` | Student | Records 2-step verified group submission |
-| `GET` | `/api/submissions/analytics` | Admin | Returns summary KPIs, chart data, group & student tracking |
+| `POST` | `/api/auth/google` | Public | Google OAuth Sign-In / Sign-Up |
+| `GET` | `/api/courses` | Auth | Returns enrolled courses (Student) or courses taught with stats (Professor) |
+| `GET` | `/api/courses/:id` | Auth | Returns course metadata and summary metrics |
+| `GET` | `/api/assignments?course_id=` | Auth | Lists assignments with `can_acknowledge` & `leader_required_message` flags |
+| `POST/PUT/DELETE` | `/api/assignments/:id` | Professor | Create, update, or delete Individual/Group course assignments |
+| `POST` | `/api/submissions/confirm` | Student | Records Individual or Leader-only Group acknowledgment |
+| `GET` | `/api/submissions/analytics` | Professor | Returns charts data + Student/Group tracking filtered by `?course_id=&status=ALL\|CONFIRMED\|PENDING` |
 
 ---
 
-## Setup & Run Instructions
+## Local Setup Instructions
 
-### Option 1: Local Development
-1. **Backend**
-   ```bash
-   cd backend
-   npm install
-   # Create backend/.env with PORT, DATABASE_URL, JWT_SECRET, GMAIL_USER, GMAIL_APP_PASSWORD, GOOGLE_CLIENT_ID
-   npm run seed   # Seeds demo professor, students, groups & assignments
-   npm run dev
-   ```
-2. **Frontend**
-   ```bash
-   cd frontend
-   npm install --legacy-peer-deps
-   # Create frontend/.env with VITE_API_URL=http://localhost:5000/api and VITE_GOOGLE_CLIENT_ID
-   npm run dev
-   ```
+### Prerequisites
+- Node.js v18+
+- PostgreSQL database URL (local or Neon Cloud)
 
-### Option 2: Docker Compose
+### 1. Clone the Repository
 ```bash
-docker compose up --build
-```
-- Frontend: `http://localhost:5173`
-- Backend API: `http://localhost:5000/api/health`
+git clone [https://github.com/gokulkrishna12/joineazy-assignment-portal.git](https://github.com/gokulkrishna12/joineazy-assignment-portal.git)
+cd joineazy-assignment-portal
+2. Backend Setup
+Bash
+cd backend
+npm install
+Create backend/.env:
 
----
+Code snippet
+PORT=5000
+DATABASE_URL=your_postgresql_connection_string
+JWT_SECRET=your_jwt_secret
+PROFESSOR_ACCESS_CODES=PROF2026,FAC101,FAC102
+GOOGLE_CLIENT_ID=your_google_oauth_client_id
+EMAIL_USER=your_gmail_address
+EMAIL_PASS=your_gmail_app_password
+Initialize the 9 tables, seed sample courses/users/assignments, and start the server:
 
-## Demo Credentials (Pre-Seeded)
-- **Professor (Admin):** `prof@joineazy.com` / `password123`
-- **Student 1:** `gokul@joineazy.com` (`STU101`) / `password123`
-- **Student 2:** `priya@joineazy.com` (`STU103`) / `password123`
+Bash
+node src/config/seed.js
+npm run dev
+3. Frontend Setup
+Bash
+cd ../frontend
+npm install
+Create frontend/.env:
 
----
+Code snippet
+VITE_API_URL=http://localhost:5000/api
+VITE_GOOGLE_CLIENT_ID=your_google_oauth_client_id
+Start the Vite dev server:
 
-## Key Design & Deployment Decisions
-- **Normalized SQL with Transactions:** Using PostgreSQL join tables (`group_members`, `assignment_groups`) and unique constraints (`UNIQUE(assignment_id, group_id)`) prevents duplicate memberships or double submissions at the database layer.
-- **Two-Step Submission Guard:** Both the frontend confirmation modal and backend `confirmed === true` + membership/target validation enforce intentional submission tracking.
-- **Cloud-Native Deployment:** Frontend deployed on **Vercel** (CDN + SPA rewrites), Express API on **Render**, and managed PostgreSQL on **Neon** (SSL pooled connections), paired with local **Docker Compose** for full-stack portability.
+Bash
+npm run dev
+Open http://localhost:5173.

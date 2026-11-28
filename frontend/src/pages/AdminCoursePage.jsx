@@ -25,7 +25,6 @@ export default function AdminCoursePage() {
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
 
-  // Create / Edit modal state
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
@@ -121,11 +120,9 @@ export default function AdminCoursePage() {
 
   if (loading && !course) {
     return (
-      <div className="min-h-screen bg-[#080d1a] px-4 py-10 text-slate-100">
-        <div className="mx-auto max-w-6xl">
-          <div className="mb-6 h-32 animate-pulse rounded-2xl bg-slate-800/80" />
-          <div className="h-64 animate-pulse rounded-2xl bg-slate-800/70" />
-        </div>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#080d1a] text-slate-300">
+        <span className="loading-spinner-lg" />
+        <p className="text-sm font-medium text-indigo-300">Loading course workspace...</p>
       </div>
     );
   }
@@ -133,7 +130,6 @@ export default function AdminCoursePage() {
   return (
     <div className="min-h-screen bg-[#080d1a] px-4 py-8 text-slate-100">
       <div className="mx-auto max-w-6xl animate-fade-up">
-        {/* Top Bar */}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <Link
             to="/admin"
@@ -160,7 +156,6 @@ export default function AdminCoursePage() {
           </div>
         )}
 
-        {/* Course Header */}
         {course && (
           <div
             className="mb-8 rounded-2xl border border-slate-800 bg-[#0f172a]/90 p-6 shadow-xl"
@@ -193,7 +188,6 @@ export default function AdminCoursePage() {
           </div>
         )}
 
-        {/* Course Assignments Section */}
         <h2 className="mb-3 text-lg font-bold text-white">
           Course Assignments ({assignments.length})
         </h2>
@@ -252,7 +246,6 @@ export default function AdminCoursePage() {
           ))}
         </div>
 
-        {/* Submission Status Monitoring + Filter Bar */}
         <div className="rounded-2xl border border-slate-800 bg-[#0f172a]/90 p-6 shadow-xl">
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
@@ -278,7 +271,6 @@ export default function AdminCoursePage() {
               </button>
             </div>
 
-            {/* Status Filter Pills */}
             <div className="flex items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900 p-1">
               {['ALL', 'CONFIRMED', 'PENDING'].map((st) => (
                 <button
@@ -296,7 +288,6 @@ export default function AdminCoursePage() {
             </div>
           </div>
 
-          {/* Tracking Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
@@ -357,7 +348,6 @@ export default function AdminCoursePage() {
         </div>
       </div>
 
-      {/* Create / Edit Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
           <form
@@ -466,9 +456,18 @@ export default function AdminCoursePage() {
               <button
                 type="submit"
                 disabled={saving}
-                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
               >
-                {saving ? 'Saving...' : editingId ? 'Save Changes' : 'Create Assignment'}
+                {saving ? (
+                  <>
+                    <span className="loading-spinner" />
+                    Saving...
+                  </>
+                ) : editingId ? (
+                  'Save Changes'
+                ) : (
+                  'Create Assignment'
+                )}
               </button>
             </div>
           </form>

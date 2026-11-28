@@ -264,7 +264,6 @@ export default function AuthPage() {
           </p>
         </div>
 
-        {/* Active Session Banner */}
         {user && !pendingRedirect && (
           <div className="mb-5 rounded-xl border border-indigo-200 bg-indigo-50/80 p-3.5 text-center">
             <p className="text-xs font-medium text-slate-600">
@@ -290,7 +289,6 @@ export default function AuthPage() {
           </div>
         )}
 
-        {/* Mode Toggle */}
         {mode !== 'forgot' ? (
           <div className="mb-5 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
             <button
@@ -331,7 +329,6 @@ export default function AuthPage() {
           </div>
         )}
 
-        {/* Alerts */}
         {error && (
           <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-700">
             <AlertCircle className="h-4 w-4 shrink-0" />
@@ -345,7 +342,6 @@ export default function AuthPage() {
           </div>
         )}
 
-        {/* LOGIN FORM */}
         {mode === 'login' && (
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
@@ -397,14 +393,20 @@ export default function AuthPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60 cursor-pointer"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60 cursor-pointer"
             >
-              {submitting ? 'Signing in...' : 'Sign In'}
+              {submitting ? (
+                <>
+                  <span className="loading-spinner" />
+                  Signing in...
+                </>
+              ) : (
+                'Sign In'
+              )}
             </button>
           </form>
         )}
 
-        {/* REGISTER WITH GMAIL OTP + PROFESSOR ACCESS ID */}
         {mode === 'register' && (
           <form onSubmit={handleRegister} className="space-y-3.5">
             <div>
@@ -573,18 +575,22 @@ export default function AuthPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60 cursor-pointer"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60 cursor-pointer"
             >
-              {submitting
-                ? 'Please wait...'
-                : otpSent
-                ? 'Verify OTP & Create Account'
-                : 'Send Verification OTP'}
+              {submitting ? (
+                <>
+                  <span className="loading-spinner" />
+                  Please wait...
+                </>
+              ) : otpSent ? (
+                'Verify OTP & Create Account'
+              ) : (
+                'Send Verification OTP'
+              )}
             </button>
           </form>
         )}
 
-        {/* FORGOT PASSWORD WITH GMAIL OTP */}
         {mode === 'forgot' && (
           <form onSubmit={handleForgot} className="space-y-4">
             <div>
@@ -667,18 +673,22 @@ export default function AuthPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60 cursor-pointer"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60 cursor-pointer"
             >
-              {submitting
-                ? 'Please wait...'
-                : otpSent
-                ? 'Confirm OTP & Reset Password'
-                : 'Send Reset OTP to Gmail'}
+              {submitting ? (
+                <>
+                  <span className="loading-spinner" />
+                  Please wait...
+                </>
+              ) : otpSent ? (
+                'Confirm OTP & Reset Password'
+              ) : (
+                'Send Reset OTP to Gmail'
+              )}
             </button>
           </form>
         )}
 
-        {/* GOOGLE OAUTH SIGN-IN */}
         {mode !== 'forgot' && (
           <div className="mt-5">
             <div className="relative my-4 flex items-center">
@@ -702,7 +712,6 @@ export default function AuthPage() {
           </div>
         )}
 
-        {/* ONE-CLICK DEMO LOGINS */}
         {mode === 'login' && (
           <div className="mt-6 border-t border-slate-200 pt-5">
             <p className="mb-2.5 text-center text-xs font-semibold uppercase tracking-wider text-slate-400">
@@ -713,7 +722,7 @@ export default function AuthPage() {
                 type="button"
                 disabled={submitting}
                 onClick={() => quickDemoLogin('prof@joineazy.com')}
-                className="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50/70 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 cursor-pointer"
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50/70 px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 cursor-pointer disabled:opacity-60"
               >
                 <ShieldCheck className="h-3.5 w-3.5" />
                 Professor Demo
@@ -722,7 +731,7 @@ export default function AuthPage() {
                 type="button"
                 disabled={submitting}
                 onClick={() => quickDemoLogin('gokul@joineazy.com')}
-                className="flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 cursor-pointer"
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 cursor-pointer disabled:opacity-60"
               >
                 <GraduationCap className="h-3.5 w-3.5" />
                 Student Demo
